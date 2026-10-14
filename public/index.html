@@ -120,7 +120,7 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30p
 <body>
 <header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who" id="who"></div></div></header>
 <main class="wrap" id="app"></main>
-<footer class="wrap">Données : API Steam (bibliothèque, joueurs connectés, classement) et SteamSpy (genres, durées, avis). Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve. · <a href="/durees.html">Labo des durées</a></footer>
+<footer class="wrap">Données : API Steam (bibliothèque, joueurs connectés, classement), IGDB (temps pour finir) et SteamSpy (genres, avis). Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</footer>
 <div id="toast" role="status"></div>
 
 <script>
@@ -156,7 +156,7 @@ function imgErr(i) { if (i.dataset.fb) { const f = i.dataset.fb; i.dataset.fb = 
 
 /* ---------------- état ---------------- */
 const S = {
-  profile: null, games: [], meta: store('pos.meta') || {},
+  profile: null, games: [], meta: store('pos.meta') || {}, ttb: store('pos.ttb') || {},
   status: {}, prefs: { like: [], dislike: [] },
   temps: 'all', mode: 'all', started: true, played: false,
   hidden: new Set(), picked: null,
@@ -167,10 +167,17 @@ const S = {
 function userKey() { return 'pos.u.' + S.profile.steamid; }
 function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started, played: S.played }); }
 let metaSaveT;
-function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => store('pos.meta', S.meta), 400); }
+function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => { store('pos.meta', S.meta); store('pos.ttb', S.ttb); }, 400); }
 
 /* ---------------- moteur de reco ---------------- */
-function hoursOf(m) { return m && m.median ? m.median / 60 : null; }
+// Durée d'un jeu en minutes : temps pour finir d'IGDB (histoire « normale », sinon rapide, sinon complet), à défaut temps médian SteamSpy.
+function durOf(id) {
+  const t = S.ttb[id];
+  const igdb = t && (t.n || t.h || t.c);
+  if (igdb) return { min: igdb, src: 'igdb' };
+  const m = S.meta[id];
+  return m?.median ? { min: m.median, src: 'spy' } : null;
+}
 function isCoop(m) { return !!m?.tags?.some((t) => COOP_TAGS.includes(t)); }
 function isMultiOnly(m) {
   if (!m?.tags?.length) return false;
@@ -226,7 +233,8 @@ function evaluate(g, aff) {
   if (blocked) return null;
   const P = m?.tags?.length ? (Math.max(-1, Math.min(1, pref / 2.5)) + 1) / 2 : 0.4;
   const Q = quality(m);
-  const h = hoursOf(m);
+  const dm = durOf(g.appid);
+  const h = dm ? dm.min / 60 : null;
   // Jeu déjà entamé : ce qui compte pour ton créneau, c'est le temps qu'il te reste.
   const left = h != null && g.playtime ? h - g.playtime / 60 : h;
   const D = durationFit(left != null && left > 0 ? left : g.playtime ? null : h);
@@ -304,6 +312,7 @@ async function enrich() {
   S.enrich = { done: 0, total: queue.length, paused: false };
   renderProgress();
   loadChart();
+  loadTtb(run);
   for (let i = 0; i < queue.length; i += 10) {
     if (run !== enrichRun) return;
     const ids = queue.slice(i, i + 10);
@@ -320,6 +329,26 @@ async function enrich() {
     renderProgress(); renderResults();
   }
   if (run === enrichRun) loadLive(run);
+}
+
+// Temps pour finir (IGDB) pour toute la bibliothèque, par lots de 50. Un jeu inconnu d'IGDB est redemandé au bout de 7 jours.
+async function loadTtb(run) {
+  const stale = Date.now() - 7 * 864e5;
+  const ids = S.games.map((g) => g.appid).filter((id) => { const t = S.ttb[id]; return !t || (!t.n && !t.h && !t.c && t.t < stale); });
+  for (let i = 0; i < ids.length; i += 50) {
+    if (run !== enrichRun) return;
+    const batch = ids.slice(i, i + 50);
+    try {
+      const r = await fetch('/api/ttb?ids=' + batch.join(','));
+      if (!r.ok) return;
+      const d = await r.json();
+      if (d.status !== 'ok') return; // IGDB pas configuré sur le serveur : on garde SteamSpy
+      const now = Date.now();
+      for (const id of batch) { const t = d.ttb?.[id]; S.ttb[id] = t ? { n: t.normally, h: t.hastily, c: t.completely, t: now } : { t: now }; }
+      saveMeta(); renderResults();
+    } catch (e) { return; }
+    await new Promise((res) => setTimeout(res, 300)); // IGDB : 4 requêtes par seconde au plus
+  }
 }
 
 async function loadChart() {
@@ -383,7 +412,7 @@ function render() {
       <p class="sub">Devinés d'après les jeux où tu as passé le plus de temps. Clique sur un tag pour dire que tu en veux (♥), clique encore pour l'écarter (✕), une troisième fois pour revenir au neutre.</p>
       <div class="tags" id="tags"></div>
     </section>
-    <section>
+    <section id="next" style="scroll-margin-top:12px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <h2 style="margin:0;font-size:20px">À jouer ensuite</h2>
         <button class="btn hot sm" data-act="dice">🎲 Laisse le hasard choisir</button>
@@ -459,21 +488,22 @@ function renderTags() {
 }
 
 // Durée du jeu (temps médian des joueurs, SteamSpy) et ton temps de jeu (Steam), avec ta progression quand on connaît les deux.
-function timeInfo(g, m) {
-  const dur = m?.median ? `≈ ${fmtH(m.median)} pour en voir le bout` : 'Durée inconnue';
+function timeInfo(g) {
+  const d = durOf(g.appid);
+  const dur = !d ? 'Durée inconnue' : d.src === 'igdb' ? `≈ ${fmtH(d.min)} pour le finir` : `≈ ${fmtH(d.min)} (temps médian des joueurs)`;
   if (!g.playtime) return { dur, mine: null };
-  const pct = m?.median ? Math.round(g.playtime / m.median * 100) : null;
+  const pct = d ? Math.round(g.playtime / d.min * 100) : null;
   const mine = `Tu y as joué ${fmtH(g.playtime)}` + (pct == null ? '' : pct >= 100 ? ' (au-delà de la moyenne)' : ` (≈ ${pct} %)`);
   return { dur, mine };
 }
-function timePills(g, m) {
-  const t = timeInfo(g, m);
+function timePills(g) {
+  const t = timeInfo(g);
   return `<span class="pill">${t.dur}</span>` + (t.mine ? `<span class="pill">${t.mine}</span>` : '<span class="pill new">Jamais lancé</span>');
 }
 
 function factsHTML(r) {
   const f = [];
-  f.push(timePills(r.g, r.m));
+  f.push(timePills(r.g));
   if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${p} % d'avis positifs</span>`); }
   if (isCoop(r.m)) f.push('<span class="pill">Coop</span>');
   const l = liveOf(r.g.appid);
@@ -512,7 +542,7 @@ function renderResults() {
       <div class="rank">${r.g.appid === S.picked ? 'Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
       <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}
       <div style="font-size:12px"><a href="steam://run/${r.g.appid}">▶ Lancer dans Steam</a> · <a href="https://store.steampowered.com/app/${r.g.appid}" target="_blank" rel="noopener">Page Steam</a> · <a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a></div>
-      ${actsHTML(r.g.appid)}</div></article>`).join('');
+      ${actsHTML(r.g.appid)}${r.g.appid === S.picked ? '<button class="btn hot sm" data-act="dice" style="align-self:flex-start">🎲 Un autre</button>' : ''}</div></article>`).join('');
   }
   renderTrends();
   if ($('#pile')?.open) renderPile();
@@ -523,7 +553,7 @@ function liveFactsHTML(t) {
   if (t.l.players != null) f.push(`<span class="pill hot">${fmtN(t.l.players)} joueurs en ce moment</span>`);
   if (t.l.spike != null && t.l.spike >= SPIKE) f.push(`<span class="pill hot">Pic : ×${t.l.spike.toFixed(1).replace('.', ',')} par rapport à d'habitude</span>`);
   if (t.l.rank) f.push(`<span class="pill">${t.l.rank}ᵉ sur Steam${t.l.newEntry ? ' · nouveau dans le top' : t.l.climb > 0 ? ` · +${t.l.climb} places en une semaine` : ''}</span>`);
-  f.push(timePills(t.g, t.m));
+  f.push(timePills(t.g));
   return `<div class="facts">${f.join('')}</div>`;
 }
 function renderTrends() {
@@ -557,7 +587,7 @@ function renderPileList() {
   if (S.sort === 'short') l = [...l].sort((a, b) => (a.h ?? 999) - (b.h ?? 999));
   if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, 'fr'));
   const shown = l.slice(0, 200);
-  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g, r.m))}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
+  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g))}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
     + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${l.length - 200} autres jeux. Affine ta recherche pour les voir.</p>` : '')
     : '<p class="empty">Rien dans ta pile ne correspond.</p>';
 }
@@ -565,6 +595,9 @@ function renderPileList() {
 /* ---------------- actions ---------------- */
 function setStatus(id, s, msg) { S.status[id] = s; if (S.picked === id) S.picked = null; saveUser(); toast(msg); renderResults(); }
 function weightedPick(list) { const pool = list.slice(0, 15); const w = pool.map((r) => r.score ** 3); const t = w.reduce((a, b) => a + b, 0); let x = Math.random() * t; for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return pool[i]; } return pool[0]; }
+
+// Amène « À jouer ensuite » en haut de l'écran, bouton 🎲 compris, seulement si ce n'est pas déjà visible.
+function showNext() { const el = $('#next'); if (!el) return; const top = el.getBoundingClientRect().top; if (top < 0 || top > innerHeight * 0.6) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
 const ACTIONS = {
   change: () => { enrichRun++; S.profile = null; S.games = []; S.error = null; history.replaceState(null, '', location.pathname); render(); },
@@ -577,12 +610,12 @@ const ACTIONS = {
     else p.like.push(v);
     S.picked = null; saveUser(); renderResults();
   },
-  dice: () => { const r = weightedPick(lastRanked.filter((x) => x.g.appid !== S.picked)); if (!r) { toast('Aucun jeu ne correspond à ces critères'); return; } S.picked = r.g.appid; renderResults(); $('#recos').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  dice: () => { const r = weightedPick(lastRanked.filter((x) => x.g.appid !== S.picked)); if (!r) { toast('Aucun jeu ne correspond à ces critères'); return; } S.picked = r.g.appid; renderResults(); showNext(); },
   go: (t) => { const id = +t.dataset.id; const g = S.games.find((x) => x.appid === id); setStatus(id, 'playing', `Bon jeu sur ${g?.name || 'ce jeu'} ! Il sort des recos.`); },
   later: (t) => { const id = +t.dataset.id; S.hidden.add(id); if (S.picked === id) S.picked = null; toast('Mis de côté pour ce soir'); renderResults(); },
   done: (t) => setStatus(+t.dataset.id, 'done', 'Bien joué ! Marqué comme fini.'),
   skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
-  pickthis: (t) => { S.picked = +t.dataset.id; renderResults(); $('#recos').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  pickthis: (t) => { S.picked = +t.dataset.id; renderResults(); showNext(); },
   resume: () => enrich(),
 };
 document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });

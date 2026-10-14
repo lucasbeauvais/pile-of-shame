@@ -139,23 +139,22 @@ test('normalizeTtb convertit les secondes IGDB en minutes', () => {
   assert.equal(normalizeTtb(undefined), null);
 });
 
-test('durations : SteamSpy seul quand IGDB n\'est pas configuré', async () => {
-  const { ctx } = setup([['steamspy.com', { appid: 10, median_forever: 300, average_forever: 900 }]]);
-  const r = await worker.fetch(new Request('https://x.dev/api/durations?appid=10'), env, ctx);
-  const d = await r.json();
-  assert.deepEqual(d.spy, { median: 300, average: 900 });
-  assert.equal(d.igdb.status, 'not_configured');
+test('ttb : rien sans identifiants Twitch', async () => {
+  const { calls, ctx } = setup([]);
+  const r = await worker.fetch(new Request('https://x.dev/api/ttb?ids=10,20'), env, ctx);
+  assert.deepEqual(await r.json(), { status: 'not_configured', ttb: {} });
+  assert.equal(calls.length, 0);
 });
 
-test('durations : IGDB via la correspondance Steam', async () => {
+test('ttb : durées IGDB en lot, null pour les jeux inconnus', async () => {
   const { calls, ctx } = setup([
-    ['steamspy.com', { appid: 10, median_forever: 300, average_forever: 900 }],
     ['oauth2/token', { access_token: 'T', expires_in: 5000000 }],
-    ['v4/external_games', [{ id: 1, game: 77, uid: '10' }]],
+    ['v4/external_games', [{ id: 1, game: 77, uid: '10' }, { id: 2, game: 88, uid: '20' }]],
     ['v4/game_time_to_beats', [{ game_id: 77, hastily: 18000, normally: 36000, completely: 72000, count: 40 }]],
   ]);
-  const r = await worker.fetch(new Request('https://x.dev/api/durations?appid=10'), { ...env, TWITCH_CLIENT_ID: 'id', TWITCH_CLIENT_SECRET: 's' }, ctx);
+  const r = await worker.fetch(new Request('https://x.dev/api/ttb?ids=10,20,30'), { ...env, TWITCH_CLIENT_ID: 'id', TWITCH_CLIENT_SECRET: 's' }, ctx);
   const d = await r.json();
-  assert.deepEqual(d.igdb, { status: 'ok', game: 77, hastily: 300, normally: 600, completely: 1200, count: 40 });
-  assert.ok(!calls.some((c) => c.includes('TESTKEY') && c.includes('igdb')));
+  assert.equal(d.status, 'ok');
+  assert.deepEqual(d.ttb, { 10: { hastily: 300, normally: 600, completely: 1200, count: 40 }, 20: null, 30: null });
+  assert.equal(calls.filter((c) => c.includes('igdb.com')).length, 2);
 });

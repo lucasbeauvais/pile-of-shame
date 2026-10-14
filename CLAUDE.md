@@ -15,7 +15,6 @@ Un seul **Cloudflare Worker** sert à la fois la page statique et l'API.
 
 ```
 public/index.html   page unique (HTML + CSS + JS vanilla, aucune dépendance)
-public/durees.html  labo des durées : compare les méthodes d'estimation aux durées de référence saisies
 src/worker.js       relais API, la clé Steam reste côté serveur
 wrangler.jsonc      config Worker + static assets (binding ASSETS)
 test/worker.test.js tests node:test du relais (npm test)
@@ -36,14 +35,13 @@ test/worker.test.js tests node:test du relais (npm test)
   - `ISteamUserStats/GetNumberOfCurrentPlayers` par jeu, renvoie `{players:{appid:nombre|null}}`. Cache 30 min.
 - `GET /api/charts`
   - `ISteamChartsService/GetMostPlayedGames` : top 100 Steam, renvoie `{ranks:[{appid, rank, lastWeekRank, peak}]}`. `lastWeekRank` = 0 pour une nouvelle entrée. Cache 30 min.
-- `GET /api/durations?appid=X` (labo des durées)
-  - Renvoie `{appid, spy:{median, average}|null, igdb:{status, hastily, normally, completely, count}}` (minutes).
-  - `igdb.status` : `ok` · `not_configured` (secrets Twitch absents) · `unknown_game` (pas de correspondance Steam) · `no_data` · `error`.
-  - IGDB : jeton Twitch `client_credentials` mis en cache, correspondance via `external_games` (source Steam = 1, champ `external_game_source` puis `category` en repli), puis `game_time_to_beats`. Cache 7 jours.
+- `GET /api/ttb?ids=1,2,…` (50 maximum)
+  - Temps pour finir d'après IGDB : `{status:'ok', ttb:{appid:{hastily, normally, completely, count}|null}}` (minutes), ou `{status:'not_configured', ttb:{}}` sans secrets Twitch.
+  - 2 requêtes IGDB par appel quel que soit le nombre de jeux : `external_games` (source Steam = 1, champ `external_game_source` puis `category` en repli), puis `game_time_to_beats`. Jeton Twitch `client_credentials` mis en cache. Pas de cache par jeu côté Worker : c'est le navigateur qui garde les résultats (`pos.ttb`).
 
 ### Secret
 `STEAM_API_KEY`, à définir via `wrangler secret put STEAM_API_KEY` ou dans le dashboard Cloudflare.
-Optionnels, pour IGDB : `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET` (application créée sur https://dev.twitch.tv/console/apps).
+Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus de temps de jeu pour beaucoup de jeux) : `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET` (application créée sur https://dev.twitch.tv/console/apps).
 ⚠️ Ne jamais la committer. Pour le développement local, la mettre dans `.dev.vars` (déjà dans `.gitignore`).
 ⚠️ L'ancienne clé de Lucas a été exposée dans une conversation : **la révoquer et en générer une nouvelle** sur https://steamcommunity.com/dev/apikey.
 
@@ -63,18 +61,19 @@ Optionnels, pour IGDB : `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET` (applicatio
 - **Avis** : lissage bayésien `(pos + 7.5) / (pos + neg + 10)`.
 - **Adéquation de durée** : 1 dans la fourchette, décroissance logarithmique en dehors, 0.45 si la durée est inconnue.
 - **Ça bouge en ce moment** : jeux de la bibliothèque (hors fini / pas intéressé / logiciels, filtre de mode appliqué, hors jeux joués plus de 2 h et lancés dans les 30 derniers jours) qui ont au moins 300 joueurs connectés, un pic (joueurs actuels / `ccu` ≥ 1,5) ou qui gagnent au moins 5 places dans le top 100 Steam. Tri par `log10(joueurs) + min(pic, 5) + min(places gagnées, 50)/10`. Joueurs demandés pour 60 jeux maximum : ceux du top Steam, les 35 meilleures recos, les 15 jeux les plus joués.
-- **Affichage des temps** (`timeInfo`) : partout (recos, tendances, pile), la durée du jeu (`median` SteamSpy, « ≈ X h pour en voir le bout ») à côté de ton temps de jeu Steam, avec ta progression en % de cette durée.
+- **Durée d'un jeu** (`durOf`) : temps pour finir IGDB (`normally`, sinon `hastily`, sinon `completely`) ; à défaut `median` SteamSpy, affiché « temps médian des joueurs ». Chargée pour toute la bibliothèque par lots de 50 au début de l'analyse ; un jeu inconnu d'IGDB est redemandé après 7 jours.
+- **Affichage des temps** (`timeInfo`) : partout (recos, tendances, pile), la durée du jeu à côté de ton temps de jeu Steam, avec ta progression en % de cette durée.
 - **Ordre d'analyse** : les 15 jeux les plus joués d'abord (pour l'affinité), puis la pile, puis les 25 suivants. Les recos se mettent à jour à chaque lot de 10.
 - **État utilisateur** dans le localStorage :
   - `pos.u.<steamid>` : statuts, préférences, filtres ;
-  - `pos.meta` : cache des métadonnées ;
+  - `pos.meta` : cache des métadonnées SteamSpy ;
+  - `pos.ttb` : cache des durées IGDB (`{n, h, c, t}` ou `{t}` si inconnu) ;
   - `pos.last` : dernier profil saisi.
 - **Lien partageable** : `?u=<profil>` charge directement un profil.
 
 ## État actuel
 - ✅ Code complet. Les tests du relais passent (`npm test`, 11 tests).
 - ✅ Déployé sur https://pile-of-shame.lucasbeauvais.workers.dev (Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
-- 🧪 Labo des durées (`/durees.html`) : 7 méthodes (médiane, moyenne, ajustements `médiane × (moyenne/médiane)^p` avec p = 0,5 et 0,75, IGDB rapide / normal / complet), classées par écart typique `exp(moy |log(estimation/référence)|) − 1` sur les références saisies (`pos.ref` dans le localStorage). Le gagnant n'est pas encore branché dans les recos.
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.
 
@@ -85,7 +84,7 @@ Optionnels, pour IGDB : `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET` (applicatio
    - soit via le dashboard : Workers & Pages, puis Import a repository (déploiement automatique à chaque push).
 3. Tester en réel avec un profil public : vérifier la forme des réponses SteamSpy, le temps d'analyse et l'affichage des jaquettes.
 4. Pistes d'amélioration :
-   - **Durée plus juste** : SteamSpy sous-estime les longs jeux. Explorer une source « time to beat » fiable ou un ajustement entre `median` et `average`.
+   - ~~**Durée plus juste**~~ : fait avec IGDB (`/api/ttb`). Un labo à base de durées de référence a été essayé puis retiré : Lucas veut des données qui marchent pour tout le monde sans saisie.
    - **Rate limiting par IP** sur `/api/meta`, pour ménager SteamSpy.
    - **Repli quand SteamSpy est indisponible** : Steam Store `appdetails` pour les genres et catégories (single-player / co-op).
    - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.

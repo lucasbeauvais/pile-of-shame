@@ -6,7 +6,7 @@ const META_TTL = 60 * 60 * 24 * 30; // 30 jours de cache pour les infos d'un jeu
 const MAX_IDS = 10;                  // jeux par appel à /api/meta
 const SPY_DELAY = 1000;              // SteamSpy demande 1 requête par seconde
 const LIVE_TTL = 60 * 30;            // 30 min de cache pour les joueurs connectés et le top Steam
-const IGDB_TTL = 60 * 60 * 24 * 7;   // 7 jours de cache pour les durées IGDB
+const MAX_TTB_IDS = 50;              // jeux par appel à /api/ttb (2 requêtes IGDB quel que soit le nombre)
 const MAX_LIVE_IDS = 15;             // jeux par appel à /api/players (limite de sous-requêtes d'un Worker)
 
 const CORS = { 'access-control-allow-origin': '*' };
@@ -232,37 +232,35 @@ export function normalizeTtb(row) {
   return { hastily: min(row.hastily), normally: min(row.normally), completely: min(row.completely), count: Number(row.count) || 0 };
 }
 
-async function igdbDuration(appid, env, ctx) {
-  if (!env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) return { status: 'not_configured' };
-  return cached(`igdb/v1/${appid}`, IGDB_TTL, ctx, async () => {
-    const token = await igdbToken(env, ctx);
-    // La source « Steam » vaut 1. IGDB a renommé le champ category en external_game_source : on essaie les deux.
-    let ext = [];
-    for (const field of ['external_game_source', 'category']) {
-      try {
-        ext = await igdbQuery(env, token, 'external_games', `fields game,uid; where uid = "${appid}" & ${field} = 1; limit 1;`);
-        if (ext.length) break;
-      } catch (e) { /* champ inconnu : on tente l'autre */ }
-    }
-    const game = ext[0]?.game;
-    if (!game) return { status: 'unknown_game' };
-    const ttb = await igdbQuery(env, token, 'game_time_to_beats', `fields game_id,hastily,normally,completely,count; where game_id = ${Number(game)}; limit 1;`);
-    const t = normalizeTtb(ttb[0]);
-    return t ? { status: 'ok', game, ...t } : { status: 'no_data', game };
-  });
+// Durées IGDB pour plusieurs jeux Steam en 2 requêtes : correspondance Steam → IGDB, puis temps pour finir.
+async function igdbBatch(appids, env, ctx) {
+  const token = await igdbToken(env, ctx);
+  const uids = appids.map((id) => `"${id}"`).join(',');
+  // La source « Steam » vaut 1. IGDB a renommé le champ category en external_game_source : on essaie les deux.
+  let ext = null;
+  for (const field of ['external_game_source', 'category']) {
+    try {
+      ext = await igdbQuery(env, token, 'external_games', `fields game,uid; where uid = (${uids}) & ${field} = 1; limit 500;`);
+      if (ext.length) break;
+    } catch (e) { /* champ inconnu : on tente l'autre */ }
+  }
+  if (!ext) throw new Error('igdb external_games');
+  const byGame = {};
+  for (const e of ext) if (e.game && appids.includes(Number(e.uid))) byGame[e.game] = Number(e.uid);
+  const out = Object.fromEntries(appids.map((id) => [id, null]));
+  const games = Object.keys(byGame);
+  if (!games.length) return out;
+  const rows = await igdbQuery(env, token, 'game_time_to_beats', `fields game_id,hastily,normally,completely,count; where game_id = (${games.join(',')}); limit 500;`);
+  for (const r of rows) { const id = byGame[r.game_id]; if (id) out[id] = normalizeTtb(r); }
+  return out;
 }
 
-// Labo des durées : toutes les sources pour un jeu, pour comparer les méthodes.
-async function durations(url, env, ctx) {
-  const appid = Number(url.searchParams.get('appid'));
-  if (!Number.isInteger(appid) || appid <= 0) return json({ error: 'bad_input', message: 'Paramètre appid manquant.' }, 400);
-  const [spy, igdb] = await Promise.all([
-    cached(`meta/v1/${appid}`, META_TTL, ctx, async () => {
-      try { return normalizeSpy(await getJSON(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`)); } catch (e) { return null; }
-    }),
-    igdbDuration(appid, env, ctx).catch((e) => ({ status: 'error', message: String(e.message || e) })),
-  ]);
-  return json({ appid, spy: spy ? { median: spy.median, average: spy.average } : null, igdb });
+// GET /api/ttb?ids=… : temps pour finir (minutes) d'après IGDB, null si IGDB ne connaît pas le jeu.
+async function ttb(url, env, ctx) {
+  const ids = parseIds(url, MAX_TTB_IDS);
+  if (!ids.length) return json({ error: 'bad_input', message: 'Paramètre ids manquant.' }, 400);
+  if (!env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) return json({ status: 'not_configured', ttb: {} });
+  return json({ status: 'ok', ttb: await igdbBatch(ids, env, ctx) });
 }
 
 export default {
@@ -276,7 +274,7 @@ export default {
       if (url.pathname === '/api/meta') return await meta(url, ctx);
       if (url.pathname === '/api/players') return await players(url, ctx);
       if (url.pathname === '/api/charts') return await charts(env, ctx);
-      if (url.pathname === '/api/durations') return await durations(url, env, ctx);
+      if (url.pathname === '/api/ttb') return await ttb(url, env, ctx);
     } catch (e) {
       return json({ error: 'upstream', message: 'Steam ne répond pas pour le moment. Réessaie dans une minute.' }, 502);
     }
