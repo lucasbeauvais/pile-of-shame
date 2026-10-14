@@ -63,7 +63,13 @@ button.stat::after{content:"Voir →";display:block;font-size:11px;color:var(--a
 .duel button.card:hover{border-color:var(--acc)}
 .duel .cbody{gap:5px;padding:10px}
 .duel .title{font-size:15px}
-.duel .streak{font-size:12px;color:var(--ok)}
+.duel .elim{font-size:12px;font-weight:700;color:var(--bad);margin-top:auto}
+.duel button.card:hover .elim{text-decoration:underline}
+.vshead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.vsbar{flex:1 1 120px;height:6px;background:var(--panel2);border-radius:99px;overflow:hidden;min-width:80px}
+.vsbar div{height:100%;background:var(--acc2);transition:width .3s}
+.vswin{border-color:var(--ok);box-shadow:0 0 0 2px var(--ok)}
+.vswin .rank{color:var(--ok)}
 .duel .pill{white-space:normal}
 .dueltools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:13px;color:var(--mute)}
 @media (max-width:520px){.duel{grid-template-columns:1fr 1fr}.duel .vs{display:none}.duel .pill{font-size:11px}}
@@ -153,7 +159,8 @@ const GENERIC = new Set(['Singleplayer', 'Multiplayer', 'Great Soundtrack', 'Ear
 const STARTED_MAX = 120; // minutes : en dessous, un jeu compte comme « à peine commencé »
 const LIVE_MAX = 60;      // jeux dont on demande le nombre de joueurs connectés
 const LIVE_MIN = 300;     // joueurs connectés à partir desquels un jeu « a du monde »
-const SPIKE = 1.5;        // joueurs actuels / pic habituel à partir duquel on parle de pic
+const SPIKE = 1.5;
+const VS_ROUNDS = 10;     // duels avant que le survivant du versus devienne la reco        // joueurs actuels / pic habituel à partir duquel on parle de pic
 
 /* ---------------- utilitaires ---------------- */
 const $ = (s) => document.querySelector(s);
@@ -176,7 +183,7 @@ const S = {
   hidden: new Set(), picks: [],
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score', view: 'reco',
-  duel: {}, pair: null, streak: 0,
+  duel: {}, vs: { round: 0, elim: [], pair: null, result: null },
   live: { players: {}, chart: {}, asked: new Set(), busy: false },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
@@ -301,7 +308,7 @@ async function analyze(input) {
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
-    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.pair = null; S.view = 'reco';
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.vs = { round: 0, elim: [], pair: null, result: null }; S.view = 'reco';
     S.hidden = new Set(); S.picks = [];
     S.live = { players: {}, chart: {}, asked: new Set(), busy: false };
     store('pos.last', input);
@@ -434,7 +441,7 @@ function render() {
     </section>
     <section class="panel" id="versus">
       <h2>⚔️ Versus</h2>
-      <p class="sub">Deux jeux de ta pile s'affrontent : touche celui qui te tente le plus. Le gagnant reste en lice et chaque duel fait monter ou descendre les jeux dans tes recos.</p>
+      <p class="sub">Deux jeux de ta pile face à face : touche celui que tu <b>élimines</b>. Le survivant affronte le suivant, et au bout de ${VS_ROUNDS} duels il devient ta reco.</p>
       <div id="duel"></div>
     </section>
     <section class="panel">
@@ -546,7 +553,6 @@ function whyHTML(r) {
 }
 function actsHTML(id, compact) {
   return `<div class="acts">
-    ${compact ? '' : `<button class="btn sm pri" data-act="go" data-id="${id}">C'est parti</button>`}
     <button class="btn sm" data-act="later" data-id="${id}">Pas ce soir</button>
     <button class="btn sm" data-act="done" data-id="${id}">Déjà fini</button>
     <button class="btn sm ghost" data-act="skip" data-id="${id}">Pas intéressé</button>
@@ -596,7 +602,7 @@ function renderTrends() {
   el.innerHTML = `<div class="trends">${list.map((t) => `<article class="card">${cover(t.g)}<div class="cbody">
     <div class="title">${esc(t.g.name)}</div>${liveFactsHTML(t)}
     ${linksHTML(t.g, `<a href="https://steamcharts.com/app/${t.g.appid}" target="_blank" rel="noopener">Courbe des joueurs</a>`)}
-    ${S.status[t.g.appid] === 'playing' ? '' : `<div class="acts"><button class="btn sm pri" data-act="go" data-id="${t.g.appid}">C'est parti</button><button class="btn sm ghost" data-act="skip" data-id="${t.g.appid}">Pas intéressé</button></div>`}
+    <div class="acts"><button class="btn sm ghost" data-act="skip" data-id="${t.g.appid}">Pas intéressé</button></div>
   </div></article>`).join('')}</div>`;
 }
 
@@ -656,44 +662,62 @@ function renderPileList() {
 }
 
 /* ---------------- versus ---------------- */
-// Le gagnant reste en lice (3 victoires d'affilée au plus), l'adversaire est pris parmi les meilleures recos les moins souvent vues.
-function duelPool() { return lastRanked.slice(0, 30).map((r) => r.g.appid); }
-function nextChallenger(exclude) {
-  const pool = duelPool().filter((id) => !exclude.includes(id));
-  if (!pool.length) return null;
-  const n = (id) => S.duel[id]?.n || 0;
-  const min = Math.min(...pool.map(n));
-  const least = pool.filter((id) => n(id) === min);
-  return least[Math.floor(Math.random() * least.length)];
-}
-function ensurePair() {
-  const pool = duelPool();
-  if (pool.length < 2) { S.pair = null; return; }
-  let [a, b] = S.pair || [];
-  if (!pool.includes(a)) { a = nextChallenger([b]); S.streak = 0; }
-  if (!pool.includes(b) || b === a) b = nextChallenger([a]);
-  S.pair = a && b ? [a, b] : null;
+// Élimination : le survivant reste, un nouvel adversaire arrive (tiré parmi les meilleures recos non éliminées).
+// Au bout de VS_ROUNDS duels, le survivant devient la reco. Chaque duel nourrit aussi une note Elo (tri « tes duels »).
+function vsPool(exclude = []) { return lastRanked.slice(0, 40).filter((r) => !S.vs.elim.includes(r.g.appid) && !exclude.includes(r.g.appid)); }
+function vsDraw(exclude) { return weightedPicks(vsPool(exclude), 1)[0]?.g.appid ?? null; }
+function vsEnsure() {
+  const v = S.vs; if (v.result) return;
+  const ok = (id) => id && vsPool().some((r) => r.g.appid === id);
+  let [a, b] = v.pair || [];
+  if (!ok(a)) a = vsDraw([b]);
+  if (!ok(b) || b === a) b = vsDraw([a]);
+  v.pair = a && b ? [a, b] : null;
+  if (!v.pair && v.round && a) v.result = a; // plus d'adversaire : le survivant gagne
 }
 function elo(win, lose) {
   const W = S.duel[win] || { r: 0, n: 0 }; const L = S.duel[lose] || { r: 0, n: 0 };
-  const e = 1 / (1 + 10 ** ((L.r - W.r) / 400));
-  const k = 32 * (1 - e);
+  const k = 32 * (1 - 1 / (1 + 10 ** ((L.r - W.r) / 400)));
   S.duel[win] = { r: W.r + k, n: W.n + 1 }; S.duel[lose] = { r: L.r - k, n: L.n + 1 };
+}
+function vsEliminate(ids) {
+  const v = S.vs; const [a, b] = v.pair;
+  const survivor = ids.length === 1 ? (ids[0] === a ? b : a) : null;
+  if (survivor) elo(survivor, ids[0]);
+  else for (const x of ids) { const d = S.duel[x] || { r: 0, n: 0 }; S.duel[x] = { r: d.r - 16, n: d.n + 1 }; }
+  v.elim.push(...ids); v.round++;
+  if (survivor && v.round >= VS_ROUNDS) { v.result = survivor; v.pair = null; }
+  else {
+    const first = survivor ?? vsDraw([a, b]);
+    const second = first && vsDraw([first]);
+    if (first && second) v.pair = [first, second];
+    else { v.pair = null; v.result = first; }
+  }
+  saveUser(); renderResults();
 }
 function renderDuel() {
   const el = $('#duel'); if (!el) return;
-  ensurePair();
-  if (!S.pair) { el.innerHTML = '<p class="empty">Il faut au moins deux jeux dans tes recos pour lancer un duel.</p>'; return; }
+  const v = S.vs;
+  // Gagnant marqué « pas ce soir », fini ou pas intéressé : comme « Encore », on repart sur de nouveaux duels.
+  if (v.result && !lastRanked.some((x) => x.g.appid === v.result)) { v.elim.push(v.result); v.result = null; v.pair = null; v.round = 0; }
+  vsEnsure();
+  if (v.result) {
+    const r = lastRanked.find((x) => x.g.appid === v.result);
+    el.innerHTML = `<article class="card vswin" style="max-width:520px">${cover(r.g)}<div class="cbody">
+      <div class="rank">🏆 Ton jeu, après ${v.round} duel${v.round > 1 ? 's' : ''}</div>
+      <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}${linksHTML(r.g)}${actsHTML(r.g.appid)}</div></article>
+      <div class="dueltools"><button class="btn hot sm" data-act="vsmore">🔁 Encore : ça ne me convient pas</button><button class="btn sm ghost" data-act="vsreset">Recommencer à zéro</button></div>`;
+    return;
+  }
+  if (!v.pair) { el.innerHTML = `<p class="empty">${v.elim.length ? 'Plus aucun jeu à opposer avec ces critères.' : 'Il faut au moins deux jeux dans tes recos pour lancer un duel.'}</p>${v.elim.length ? '<div class="dueltools"><button class="btn sm" data-act="vsreset">Recommencer à zéro</button></div>' : ''}`; return; }
   const card = (id) => {
     const g = S.games.find((x) => x.appid === id);
-    return `<button class="card" data-act="vote" data-id="${id}" aria-label="Je préfère ${esc(g.name)}">${cover(g)}<div class="cbody">
-      <div class="title">${esc(g.name)}</div><div class="facts">${timePills(g)}</div>
-      ${id === S.pair[0] && S.streak ? `<div class="streak">🏆 ${S.streak} victoire${S.streak > 1 ? 's' : ''} d'affilée</div>` : ''}</div></button>`;
+    return `<button class="card" data-act="vselim" data-id="${id}" aria-label="Éliminer ${esc(g.name)}">${cover(g)}<div class="cbody">
+      <div class="title">${esc(g.name)}</div><div class="facts">${timePills(g)}</div><div class="elim">✕ Éliminer</div></div></button>`;
   };
-  const played = Object.values(S.duel).reduce((a, d) => a + d.n, 0) / 2;
-  el.innerHTML = `<div class="duel">${card(S.pair[0])}<div class="vs">VS</div>${card(S.pair[1])}</div>
-    <div class="dueltools"><button class="btn sm" data-act="vote" data-id="0">Aucun des deux</button><button class="btn sm ghost" data-act="duelskip">Passer</button>
-    <span>${Math.round(played)} duel${played >= 2 ? 's' : ''} joué${played >= 2 ? 's' : ''}</span>${played ? '<button class="btn sm ghost" data-act="duelreset">Remettre à zéro</button>' : ''}</div>`;
+  el.innerHTML = `<div class="vshead"><b>Duel ${v.round + 1} / ${VS_ROUNDS}</b><div class="vsbar"><div style="width:${v.round / VS_ROUNDS * 100}%"></div></div></div>
+    <div class="duel">${card(v.pair[0])}<div class="vs">VS</div>${card(v.pair[1])}</div>
+    <div class="dueltools"><button class="btn sm" data-act="vsboth">✕ Éliminer les deux</button>${v.round ? '<button class="btn sm ghost" data-act="vsreset">Recommencer</button>' : ''}</div>`;
 }
 
 /* ---------------- actions ---------------- */
@@ -744,24 +768,10 @@ const ACTIONS = {
     renderPile(); d.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
   unmark: (t) => { const id = +t.dataset.id; delete S.status[id]; saveUser(); toast('C’est noté, le jeu revient dans ta pile.'); renderResults(); },
-  vote: (t) => {
-    const id = +t.dataset.id; const [a, b] = S.pair || [];
-    if (!a) return;
-    if (!id) { // aucun des deux : les deux reculent un peu, on change les deux
-      for (const x of [a, b]) { const d = S.duel[x] || { r: 0, n: 0 }; S.duel[x] = { r: d.r - 16, n: d.n + 1 }; }
-      S.pair = null; S.streak = 0;
-      const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); if (c1 && c2) S.pair = [c1, c2];
-    } else {
-      const lose = id === a ? b : a;
-      elo(id, lose);
-      S.streak = id === a ? S.streak + 1 : 1;
-      if (S.streak > 3) { S.streak = 0; const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); S.pair = c1 && c2 ? [c1, c2] : [id, nextChallenger([id, lose])]; }
-      else S.pair = [id, nextChallenger([id, lose])];
-    }
-    saveUser(); renderResults();
-  },
-  duelskip: () => { const [a, b] = S.pair || []; const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); S.pair = c1 && c2 ? [c1, c2] : null; S.streak = 0; renderDuel(); },
-  duelreset: () => { S.duel = {}; S.pair = null; S.streak = 0; saveUser(); toast('Duels remis à zéro'); renderResults(); },
+  vselim: (t) => vsEliminate([+t.dataset.id]),
+  vsboth: () => vsEliminate([...S.vs.pair]),
+  vsmore: () => { const v = S.vs; v.elim.push(v.result); v.result = null; v.pair = null; v.round = 0; renderDuel(); $('#versus').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  vsreset: () => { S.vs = { round: 0, elim: [], pair: null, result: null }; renderDuel(); },
 };
 document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });
 document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });
