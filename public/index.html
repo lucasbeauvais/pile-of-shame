@@ -6,11 +6,11 @@
 <title>Pile of Shame</title>
 <meta name="description" content="Colle ton profil Steam et découvre à quel jeu de ta bibliothèque jouer ensuite, selon ton temps libre et tes goûts.">
 <meta name="author" content="Lucas Beauvais Cochereau">
-<link rel="canonical" href="https://pile-of-shame.lucasbeauvais.workers.dev/">
+<link rel="canonical" href="https://pile-of-shame.lucasbeauvais.com/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Pile of Shame">
 <meta property="og:description" content="Colle ton profil Steam et découvre à quel jeu de ta bibliothèque jouer ensuite, selon ton temps libre et tes goûts.">
-<meta property="og:url" content="https://pile-of-shame.lucasbeauvais.workers.dev/">
+<meta property="og:url" content="https://pile-of-shame.lucasbeauvais.com/">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:locale:alternate" content="en_US">
 <script type="application/ld+json">
@@ -19,24 +19,24 @@
   "@graph": [
     {
       "@type": "WebApplication",
-      "@id": "https://pile-of-shame.lucasbeauvais.workers.dev/#app",
+      "@id": "https://pile-of-shame.lucasbeauvais.com/#app",
       "name": "Pile of Shame",
-      "url": "https://pile-of-shame.lucasbeauvais.workers.dev/",
+      "url": "https://pile-of-shame.lucasbeauvais.com/",
       "description": "Colle ton profil Steam et découvre à quel jeu de ta bibliothèque jouer ensuite, selon ton temps libre et tes goûts.",
       "applicationCategory": "GameApplication",
       "operatingSystem": "Web",
       "inLanguage": ["fr", "en"],
       "isAccessibleForFree": true,
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
-      "author": { "@id": "https://pile-of-shame.lucasbeauvais.workers.dev/#lucas" }
+      "author": { "@id": "https://pile-of-shame.lucasbeauvais.com/#lucas" }
     },
     {
       "@type": "Person",
-      "@id": "https://pile-of-shame.lucasbeauvais.workers.dev/#lucas",
+      "@id": "https://pile-of-shame.lucasbeauvais.com/#lucas",
       "name": "Lucas Beauvais Cochereau",
       "jobTitle": "Directeur Marketing Digital & Performance",
       "address": { "@type": "PostalAddress", "addressLocality": "Paris", "addressCountry": "FR" },
-      "sameAs": ["LINKEDIN_URL"]
+      "sameAs": ["https://fr.linkedin.com/in/lucas-beauvais"]
     }
   ]
 }
@@ -87,19 +87,14 @@ form.go input:focus{border-color:var(--acc)}
 .igbtn b{display:block;font-size:16px;font-weight:800;line-height:1.25;text-shadow:0 1px 1px rgba(120,40,0,.35)}
 .igbtn span{display:block;font-size:12px;font-weight:600;color:#ffe680;margin-top:2px}
 .ig small{display:block;color:var(--mute);font-size:11px;margin-top:5px;opacity:.8}
-.about{padding-block:8px 28px;color:var(--mute);font-size:15px;line-height:1.6}
-.about .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.about section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
-.about h2{color:var(--txt);font-size:16px;margin:0 0 6px}
+.about{padding-block:0 28px;color:var(--mute);font-size:12px;line-height:1.55;opacity:.75}
+.about .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;border-top:1px solid var(--line);padding-top:14px}
+.about h2{color:var(--mute);font-size:12px;font-weight:700;margin:0 0 4px}
 .about p{margin:0}
-.about ol{margin:0;padding-left:20px}
-.about li{margin:3px 0}
-.about strong{color:var(--txt);font-weight:600}
-@media (max-width:860px){.about .cols{grid-template-columns:1fr}}
-footer .faff{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.hbtn{display:inline-block;background:#cc2929;color:#fff;font-weight:700;font-size:14px;border-radius:8px;padding:7px 14px}
-.hbtn:hover{background:#e03636;text-decoration:none}
-footer .faff small{color:var(--mute);font-size:11px}
+.about ol{margin:0;padding-left:16px}
+.about li{margin:2px 0}
+.about strong{font-weight:600}
+@media (max-width:860px){.about .cols{grid-template-columns:1fr;gap:10px}}
 footer .by{margin:0 0 6px;color:var(--txt);font-size:13px}
 footer .by strong{font-weight:700}
 .err{background:#2a1517;border:1px solid #5a2a2d;color:#ffb4ae;border-radius:10px;padding:12px 14px}
@@ -209,7 +204,11 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30p
 <body>
 <header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who"><span id="who" style="display:contents"></span><button class="btn sm ghost" id="langbtn" data-act="lang"></button></div></div></header>
 <main class="wrap" id="app"></main>
-<!-- Contenu statique : lisible sans JavaScript (moteurs de recherche, crawlers d'IA). Traduit en anglais par applyLang(). -->
+<footer class="wrap">
+  <p class="by" data-i18n="foot.by">Un projet perso de <strong>Lucas Beauvais Cochereau</strong> · <a href="https://fr.linkedin.com/in/lucas-beauvais" rel="author noopener" target="_blank">LinkedIn</a></p>
+  <p id="foot" data-i18n="footer">Données : API Steam (bibliothèque, genres, avis, joueurs connectés, classement), IGDB (temps pour finir) et SteamSpy. Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</p>
+</footer>
+<!-- Contenu statique, tout en bas et discret : lisible sans JavaScript (moteurs de recherche, crawlers d'IA). Traduit en anglais par applyLang(). -->
 <div class="wrap about" id="about">
   <div class="cols">
     <section>
@@ -230,11 +229,6 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30p
     </section>
   </div>
 </div>
-<footer class="wrap">
-  <div class="faff"><a class="hbtn" href="HUMBLE_AFFILIATE_URL" rel="sponsored noopener" target="_blank" data-i18n="foot.humble">Nourrir la pile</a><small data-i18n="ig.aff">lien affilié</small></div>
-  <p class="by" data-i18n="foot.by">Un projet perso de <strong>Lucas Beauvais Cochereau</strong> · <a href="LINKEDIN_URL" rel="author noopener" target="_blank">LinkedIn</a></p>
-  <p id="foot" data-i18n="footer">Données : API Steam (bibliothèque, genres, avis, joueurs connectés, classement), IGDB (temps pour finir) et SteamSpy. Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</p>
-</footer>
 <div id="toast" role="status"></div>
 
 <script>
@@ -330,8 +324,7 @@ const I18N = {
     'about.how': "<li>Colle l'URL ou l'identifiant de ton profil Steam (profil public, avec les détails des jeux visibles).</li><li>Indique combien de temps tu as devant toi, et si tu joues seul ou à plusieurs.</li><li>Choisis parmi les trois jeux proposés, ou laisse le hasard 🎲 ou le Versus trancher, et lance enfin le jeu.</li>",
     'about.whoT': 'Qui est derrière',
     'about.who': "Un projet perso de <strong>Lucas Beauvais Cochereau</strong>, directeur marketing digital &amp; performance à Paris, et propriétaire d'une pile de la honte très respectable.",
-    'foot.humble': 'Nourrir la pile',
-    'foot.by': 'Un projet perso de <strong>Lucas Beauvais Cochereau</strong> · <a href="LINKEDIN_URL" rel="author noopener" target="_blank">LinkedIn</a>',
+    'foot.by': 'Un projet perso de <strong>Lucas Beauvais Cochereau</strong> · <a href="https://fr.linkedin.com/in/lucas-beauvais" rel="author noopener" target="_blank">LinkedIn</a>',
     'ig.title': 'Encore des jeux que je lancerai pas !', 'ig.sub': 'Des jeux pas chers sur Instant Gaming', 'ig.aff': 'lien affilié',
     'note.hidden': "Le temps de jeu de ce profil est masqué : Steam renvoie 0 h pour tous ses jeux. Impossible donc de deviner tes goûts ou de savoir ce que tu as déjà commencé. Pour corriger : dans Steam, <b>Profil › Modifier le profil › Paramètres de confidentialité</b>, décoche « Toujours garder mon temps de jeu total privé ». En attendant, choisis tes genres avec ♥ dans « Tes goûts ».",
     'err.unexpected': 'Réponse inattendue du serveur.', 'err.load': 'Impossible de charger ce profil.', 'err.network': 'Connexion impossible. Vérifie ta connexion internet et réessaie.',
@@ -396,8 +389,7 @@ const I18N = {
     'about.how': '<li>Paste your Steam profile link or ID (public profile, with game details visible).</li><li>Say how much time you have, and whether you play solo or with friends.</li><li>Pick one of the three suggested games, or let chance 🎲 or the Versus decide, and finally launch it.</li>',
     'about.whoT': 'Who is behind it',
     'about.who': 'A side project by <strong>Lucas Beauvais Cochereau</strong>, digital marketing &amp; performance director in Paris, and owner of a very respectable pile of shame.',
-    'foot.humble': 'Feed the pile',
-    'foot.by': 'A side project by <strong>Lucas Beauvais Cochereau</strong> · <a href="LINKEDIN_URL" rel="author noopener" target="_blank">LinkedIn</a>',
+    'foot.by': 'A side project by <strong>Lucas Beauvais Cochereau</strong> · <a href="https://fr.linkedin.com/in/lucas-beauvais" rel="author noopener" target="_blank">LinkedIn</a>',
     'ig.title': "More games I'll never launch!", 'ig.sub': 'Cheap games on Instant Gaming', 'ig.aff': 'affiliate link',
     'note.hidden': 'This profile hides its playtime: Steam returns 0 h for every game. So we cannot guess your taste or tell what you have already started. To fix it: in Steam, <b>Profile › Edit Profile › Privacy Settings</b>, untick "Always keep my total playtime private". Meanwhile, pick your genres with ♥ in "Your taste".',
     'err.unexpected': 'Unexpected answer from the server.', 'err.load': 'Could not load this profile.', 'err.network': 'Could not connect. Check your internet connection and try again.',

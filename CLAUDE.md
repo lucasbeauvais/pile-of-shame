@@ -15,7 +15,7 @@ Un seul **Cloudflare Worker** sert à la fois la page statique et l'API.
 
 ```
 public/index.html   page unique (HTML + CSS + JS vanilla, aucune dépendance)
-public/robots.txt   tout autorisé, y compris GPTBot, ClaudeBot, PerplexityBot, Google-Extended
+public/robots.txt   tout autorisé (Content-Signal search/ai-input/ai-train = yes), y compris GPTBot, ClaudeBot, PerplexityBot, Google-Extended
 src/worker.js       relais API, la clé Steam reste côté serveur
 wrangler.jsonc      config Worker + static assets (binding ASSETS)
 test/worker.test.js tests node:test du relais (npm test)
@@ -88,7 +88,7 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 
 ## État actuel
 - ✅ Code complet. Les tests du relais passent (`npm test`, 18 tests).
-- ✅ Déployé sur https://pile-of-shame.lucasbeauvais.workers.dev (Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
+- ✅ Déployé sur https://pile-of-shame.lucasbeauvais.com (aussi https://pile-of-shame.lucasbeauvais.workers.dev ; Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
 - 🆕 `/api/meta` via `IStoreBrowseService/GetItems` : forme de la réponse écrite de mémoire, vérifiée seulement avec des données simulées. Si Steam ne répond pas comme prévu, tout retombe sur SteamSpy (lent).
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.
@@ -106,12 +106,14 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
    - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.
 
 ## SEO / GEO
+- URL canonique : **https://pile-of-shame.lucasbeauvais.com/** (canonical, `og:url`, JSON-LD). L'URL workers.dev reste joignable.
 - L'appli (`<main id="app">`) est rendue en JS : les crawlers ne la voient pas. Ce qui est lisible sans JS est donc écrit **en dur** dans `public/index.html` :
-  - bloc `#about` sous l'appli (« C'est quoi, la pile de la honte ? », « Comment ça marche », « Qui est derrière ») ;
-  - footer : bouton affilié Humble « Nourrir la pile » + « lien affilié », ligne « Un projet perso de Lucas Beauvais Cochereau · LinkedIn », ligne des sources de données.
+  - footer : « Un projet perso de Lucas Beauvais Cochereau · LinkedIn » (https://fr.linkedin.com/in/lucas-beauvais) et la ligne des sources de données ;
+  - bloc `#about`, **tout en bas, après le footer**, volontairement discret (12 px, gris, sans cartes) : « C'est quoi, la pile de la honte ? », « Comment ça marche », « Qui est derrière ». Visible quand même, pour ne pas ressembler à du texte caché.
   - Ces blocs portent `data-i18n="clé"` : en français dans le HTML d'origine, `applyLang()` les traduit quand la page passe en anglais. Modifier le texte = modifier le HTML **et** les clés `fr` / `en`.
 - `<head>` : canonical, Open Graph (pas d'`og:image`, aucune image dans le projet), `meta author`, JSON-LD `@graph` = `WebApplication` (auteur → `#lucas`) + `Person` (`#lucas`, `sameAs` LinkedIn).
-- Placeholders à remplacer : `LINKEDIN_URL` (JSON-LD, footer, clés `foot.by`) et `HUMBLE_AFFILIATE_URL` (footer). `SITE_URL` = l'URL workers.dev en attendant le domaine perso (canonical, `og:url`, JSON-LD).
+- `robots.txt` : tout autorisé, `Content-Signal: search=yes, ai-input=yes, ai-train=yes`, plus des groupes explicites pour GPTBot, ClaudeBot, PerplexityBot, Google-Extended.
+- Seul bouton affilié : Instant Gaming (pas de Humble).
 
 ## Langue
 - Dictionnaire `I18N = {fr, en}` en tête du script, fonction `t(clé, {variables})`. Tout texte affiché passe par `t()`, y compris les messages d'erreur du serveur, traduits côté page à partir de leur code (`err.<error>`).
