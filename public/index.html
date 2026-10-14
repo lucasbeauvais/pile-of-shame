@@ -455,11 +455,23 @@ function renderTags() {
   }).join('');
 }
 
+// Durée du jeu (temps médian des joueurs, SteamSpy) et ton temps de jeu (Steam), avec ta progression quand on connaît les deux.
+function timeInfo(g, m) {
+  const dur = m?.median ? `≈ ${fmtH(m.median)} pour en voir le bout` : 'Durée inconnue';
+  if (!g.playtime) return { dur, mine: null };
+  const pct = m?.median ? Math.round(g.playtime / m.median * 100) : null;
+  const mine = `Tu y as joué ${fmtH(g.playtime)}` + (pct == null ? '' : pct >= 100 ? ' (au-delà de la moyenne)' : ` (≈ ${pct} %)`);
+  return { dur, mine };
+}
+function timePills(g, m) {
+  const t = timeInfo(g, m);
+  return `<span class="pill">${t.dur}</span>` + (t.mine ? `<span class="pill">${t.mine}</span>` : '<span class="pill new">Jamais lancé</span>');
+}
+
 function factsHTML(r) {
   const f = [];
-  if (r.h != null) f.push(`<span class="pill">≈ ${fmtH(r.m.median)}</span>`); else f.push('<span class="pill">Durée inconnue</span>');
+  f.push(timePills(r.g, r.m));
   if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${p} % d'avis positifs</span>`); }
-  f.push(r.g.playtime ? `<span class="pill">Commencé : ${fmtH(r.g.playtime)}</span>` : '<span class="pill new">Jamais lancé</span>');
   if (isCoop(r.m)) f.push('<span class="pill">Coop</span>');
   const l = liveOf(r.g.appid);
   if (l.players >= LIVE_MIN) f.push(`<span class="pill hot">${fmtN(l.players)} joueurs en ce moment</span>`);
@@ -507,7 +519,7 @@ function liveFactsHTML(t) {
   if (t.l.players != null) f.push(`<span class="pill hot">${fmtN(t.l.players)} joueurs en ce moment</span>`);
   if (t.l.spike != null && t.l.spike >= SPIKE) f.push(`<span class="pill hot">Pic : ×${t.l.spike.toFixed(1).replace('.', ',')} par rapport à d'habitude</span>`);
   if (t.l.rank) f.push(`<span class="pill">${t.l.rank}ᵉ sur Steam${t.l.newEntry ? ' · nouveau dans le top' : t.l.climb > 0 ? ` · +${t.l.climb} places en une semaine` : ''}</span>`);
-  f.push(t.g.playtime ? `<span class="pill">Tu y as joué ${fmtH(t.g.playtime)}</span>` : '<span class="pill new">Jamais lancé</span>');
+  f.push(timePills(t.g, t.m));
   return `<div class="facts">${f.join('')}</div>`;
 }
 function renderTrends() {
@@ -541,7 +553,7 @@ function renderPileList() {
   if (S.sort === 'short') l = [...l].sort((a, b) => (a.h ?? 999) - (b.h ?? 999));
   if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, 'fr'));
   const shown = l.slice(0, 200);
-  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${r.h != null ? '≈ ' + fmtH(r.m.median) : 'Durée inconnue'}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
+  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g, r.m))}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
     + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${l.length - 200} autres jeux. Affine ta recherche pour les voir.</p>` : '')
     : '<p class="empty">Rien dans ta pile ne correspond.</p>';
 }

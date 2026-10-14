@@ -56,6 +56,7 @@ test/worker.test.js tests node:test du relais (npm test)
 - **Avis** : lissage bayésien `(pos + 7.5) / (pos + neg + 10)`.
 - **Adéquation de durée** : 1 dans la fourchette, décroissance logarithmique en dehors, 0.45 si la durée est inconnue.
 - **Ça bouge en ce moment** : jeux de la bibliothèque (hors fini / pas intéressé / logiciels, filtre de mode appliqué, hors jeux joués plus de 2 h et lancés dans les 30 derniers jours) qui ont au moins 300 joueurs connectés, un pic (joueurs actuels / `ccu` ≥ 1,5) ou qui gagnent au moins 5 places dans le top 100 Steam. Tri par `log10(joueurs) + min(pic, 5) + min(places gagnées, 50)/10`. Joueurs demandés pour 60 jeux maximum : ceux du top Steam, les 35 meilleures recos, les 15 jeux les plus joués.
+- **Affichage des temps** (`timeInfo`) : partout (recos, tendances, pile), la durée du jeu (`median` SteamSpy, « ≈ X h pour en voir le bout ») à côté de ton temps de jeu Steam, avec ta progression en % de cette durée.
 - **Ordre d'analyse** : les 15 jeux les plus joués d'abord (pour l'affinité), puis la pile, puis les 25 suivants. Les recos se mettent à jour à chaque lot de 10.
 - **État utilisateur** dans le localStorage :
   - `pos.u.<steamid>` : statuts, préférences, filtres ;
