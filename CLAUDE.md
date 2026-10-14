@@ -93,17 +93,17 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.
 
-## À faire (dans l'ordre)
-1. Créer le dépôt GitHub `pile-of-shame` et pousser le code : `git init`, `gh repo create pile-of-shame --private --source=. --push`.
-2. Déployer :
-   - soit en CLI : `npm install`, `npx wrangler login`, `npx wrangler secret put STEAM_API_KEY`, `npx wrangler deploy` ;
-   - soit via le dashboard : Workers & Pages, puis Import a repository (déploiement automatique à chaque push).
-3. Tester en réel avec un profil public : vérifier la forme des réponses SteamSpy, le temps d'analyse et l'affichage des jaquettes.
-4. Pistes d'amélioration :
-   - ~~**Durée plus juste**~~ : fait avec IGDB (`/api/ttb`). Un labo à base de durées de référence a été essayé puis retiré : Lucas veut des données qui marchent pour tout le monde sans saisie.
-   - **Rate limiting par IP** sur `/api/meta`, pour ménager SteamSpy.
-   - **Repli quand SteamSpy est indisponible** : Steam Store `appdetails` pour les genres et catégories (single-player / co-op).
-   - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.
+## À faire
+- ✅ Dépôt GitHub `lucasbeauvais/pile-of-shame`, déploiement Cloudflare Workers Builds (push sur `main` = mise en ligne), domaine perso.
+- À vérifier en réel (jamais testé contre les vraies API depuis l'environnement de dev, sans réseau) :
+  - `/api/meta` via `GetItems` : l'analyse d'une bibliothèque de 1 500 jeux doit prendre quelques secondes. Si c'est lent, la réponse Steam n'a pas la forme attendue et tout retombe sur SteamSpy.
+  - `/api/ttb` : secrets Twitch en place ? `GET /api/ttb?ids=1245620,620` doit renvoyer `status: ok`.
+  - `/api/charts` (forme de `GetMostPlayedGames`) et `/api/site` (redirection vers le site officiel).
+  - `robots.txt` sur le domaine perso : vérifier que le robots.txt géré par Cloudflare ne s'ajoute pas en bloquant des crawlers d'IA.
+- Pistes :
+  - **Rate limiting par IP** sur `/api/meta`.
+  - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.
+  - `og:image` pour les partages.
 
 ## SEO / GEO
 - URL canonique : **https://pile-of-shame.lucasbeauvais.com/** (canonical, `og:url`, JSON-LD). L'URL workers.dev reste joignable.
