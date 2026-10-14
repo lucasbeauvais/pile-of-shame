@@ -38,6 +38,8 @@ test/worker.test.js tests node:test du relais (npm test)
 - `GET /api/ttb?ids=1,2,…` (50 maximum)
   - Temps pour finir d'après IGDB : `{status:'ok', ttb:{appid:{hastily, normally, completely, count}|null}}` (minutes), ou `{status:'not_configured', ttb:{}}` sans secrets Twitch.
   - 2 requêtes IGDB par appel quel que soit le nombre de jeux : `external_games` (source Steam = 1, champ `external_game_source` puis `category` en repli), puis `game_time_to_beats`. Jeton Twitch `client_credentials` mis en cache. Pas de cache par jeu côté Worker : c'est le navigateur qui garde les résultats (`pos.ttb`).
+- `GET /api/site?appid=X`
+  - Redirige (302) vers le site officiel du jeu, lu dans `website` de la fiche Steam (`store.steampowered.com/api/appdetails?filters=basic`, http(s) seulement), ou vers sa page Steam à défaut. Cache 30 jours.
 
 ### Secret
 `STEAM_API_KEY`, à définir via `wrangler secret put STEAM_API_KEY` ou dans le dashboard Cloudflare.
@@ -63,16 +65,20 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - **Ça bouge en ce moment** : jeux de la bibliothèque (hors fini / pas intéressé / logiciels, filtre de mode appliqué, hors jeux joués plus de 2 h et lancés dans les 30 derniers jours) qui ont au moins 300 joueurs connectés, un pic (joueurs actuels / `ccu` ≥ 1,5) ou qui gagnent au moins 5 places dans le top 100 Steam. Tri par `log10(joueurs) + min(pic, 5) + min(places gagnées, 50)/10`. Joueurs demandés pour 60 jeux maximum : ceux du top Steam, les 35 meilleures recos, les 15 jeux les plus joués.
 - **Durée d'un jeu** (`durOf`) : temps pour finir IGDB (`normally`, sinon `hastily`, sinon `completely`) ; à défaut `median` SteamSpy, affiché « temps médian des joueurs ». Chargée pour toute la bibliothèque par lots de 50 au début de l'analyse ; un jeu inconnu d'IGDB est redemandé après 7 jours.
 - **Affichage des temps** (`timeInfo`) : partout (recos, tendances, pile), la durée du jeu à côté de ton temps de jeu Steam, avec ta progression en % de cette durée.
+- **Versus** : duel entre deux jeux tirés des 30 meilleures recos (les moins souvent vus d'abord). Le gagnant reste en lice, 3 victoires d'affilée au plus. Note Elo par jeu (`duel:{appid:{r, n}}`, K = 32) ; « Aucun des deux » retire 16 aux deux. Effet sur le score : `× (1 + 0.3·tanh(r/100))`.
+- **Stats du haut** : cliquables, elles ouvrent « Toute ta pile » sur la bonne vue : jeux possédés (toute la bibliothèque, par nom), jamais lancés, heures au compteur (tri par temps de jeu), marqués finis (bouton « Pas fini finalement »).
+- **Toute ta pile** : vues recos / toute la bibliothèque / jamais lancés / finis / écartés / en cours ; tris pertinence / duels / plus courts / temps de jeu / nom. Les jeux finis, écartés ou en cours peuvent être démarqués.
+- **Liens d'un jeu** (`linksHTML`) : Lancer dans Steam, Voir la page du jeu (`/api/site`), Page Steam, plus HowLongToBeat (recos) ou la courbe de joueurs (tendances).
 - **Ordre d'analyse** : les 15 jeux les plus joués d'abord (pour l'affinité), puis la pile, puis les 25 suivants. Les recos se mettent à jour à chaque lot de 10.
 - **État utilisateur** dans le localStorage :
-  - `pos.u.<steamid>` : statuts, préférences, filtres ;
+  - `pos.u.<steamid>` : statuts, préférences, filtres, notes des duels ;
   - `pos.meta` : cache des métadonnées SteamSpy ;
   - `pos.ttb` : cache des durées IGDB (`{n, h, c, t}` ou `{t}` si inconnu) ;
   - `pos.last` : dernier profil saisi.
 - **Lien partageable** : `?u=<profil>` charge directement un profil.
 
 ## État actuel
-- ✅ Code complet. Les tests du relais passent (`npm test`, 11 tests).
+- ✅ Code complet. Les tests du relais passent (`npm test`, 16 tests).
 - ✅ Déployé sur https://pile-of-shame.lucasbeauvais.workers.dev (Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.

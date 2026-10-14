@@ -53,6 +53,20 @@ form.go input:focus{border-color:var(--acc)}
 .stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
 .stat span{font-size:12px;color:var(--mute)}
 .stat.shame b{color:var(--acc2)}
+button.stat{text-align:left;cursor:pointer;color:inherit;font:inherit}
+button.stat:hover{border-color:var(--acc)}
+button.stat::after{content:"Voir →";display:block;font-size:11px;color:var(--acc);margin-top:2px}
+.links{font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.duel{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch}
+.duel .vs{align-self:center;font-weight:800;color:var(--acc2);font-size:18px}
+.duel button.card{cursor:pointer;text-align:left;color:inherit;font:inherit;padding:0}
+.duel button.card:hover{border-color:var(--acc)}
+.duel .cbody{gap:5px;padding:10px}
+.duel .title{font-size:15px}
+.duel .streak{font-size:12px;color:var(--ok)}
+.duel .pill{white-space:normal}
+.dueltools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:13px;color:var(--mute)}
+@media (max-width:520px){.duel{grid-template-columns:1fr 1fr}.duel .vs{display:none}.duel .pill{font-size:11px}}
 
 .progress{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mute)}
 .bar{flex:1;height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
@@ -161,11 +175,12 @@ const S = {
   temps: 'all', mode: 'all', started: true, played: false,
   hidden: new Set(), picked: null,
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
-  q: '', sort: 'score',
+  q: '', sort: 'score', view: 'reco',
+  duel: {}, pair: null, streak: 0,
   live: { players: {}, chart: {}, state: 'idle' },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
-function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started, played: S.played }); }
+function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started, played: S.played, duel: S.duel }); }
 let metaSaveT;
 function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => { store('pos.meta', S.meta); store('pos.ttb', S.ttb); }, 400); }
 
@@ -240,7 +255,8 @@ function evaluate(g, aff) {
   const D = durationFit(left != null && left > 0 ? left : g.playtime ? null : h);
   if (TEMPS[S.temps].hi && D === 0) return null;
   const fresh = g.playtime === 0 ? 1 : 0.85;
-  const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh;
+  const duel = 1 + 0.3 * Math.tanh((S.duel[g.appid]?.r || 0) / 100); // tes duels : jusqu'à ±30 %
+  const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh * duel;
   return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q, going, left };
 }
 
@@ -291,7 +307,7 @@ async function analyze(input) {
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
-    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false;
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.pair = null; S.view = 'reco';
     S.hidden = new Set(); S.picked = null;
     S.live = { players: {}, chart: {}, state: 'idle' };
     store('pos.last', input);
@@ -419,6 +435,11 @@ function render() {
       </div>
       <div class="recos" id="recos"></div>
     </section>
+    <section class="panel" id="versus">
+      <h2>⚔️ Versus</h2>
+      <p class="sub">Deux jeux de ta pile s'affrontent : touche celui qui te tente le plus. Le gagnant reste en lice et chaque duel fait monter ou descendre les jeux dans tes recos.</p>
+      <div id="duel"></div>
+    </section>
     <section class="panel">
       <h2>🔥 Ça bouge en ce moment</h2>
       <p class="sub">Les jeux de ta bibliothèque où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.</p>
@@ -456,10 +477,10 @@ function renderStats() {
   const never = S.games.filter((g) => !g.playtime).length;
   const h = Math.round(S.games.reduce((a, g) => a + g.playtime, 0) / 60);
   const done = Object.values(S.status).filter((s) => s === 'done').length;
-  el.innerHTML = `<div class="stat"><b>${n}</b><span>jeux possédés</span></div>
-    <div class="stat shame"><b>${never}</b><span>jamais lancés (${n ? Math.round(never / n * 100) : 0} %)</span></div>
-    <div class="stat"><b>${h.toLocaleString('fr')}</b><span>heures au compteur</span></div>
-    <div class="stat"><b>${done}</b><span>marqués finis ici</span></div>`;
+  el.innerHTML = `<button class="stat" data-act="pileview" data-v="all"><b>${n}</b><span>jeux possédés</span></button>
+    <button class="stat shame" data-act="pileview" data-v="never"><b>${never}</b><span>jamais lancés (${n ? Math.round(never / n * 100) : 0} %)</span></button>
+    <button class="stat" data-act="pileview" data-v="hours"><b>${h.toLocaleString('fr')}</b><span>heures au compteur</span></button>
+    <button class="stat" data-act="pileview" data-v="done"><b>${done}</b><span>marqués finis ici</span></button>`;
 }
 
 function renderProgress() {
@@ -499,6 +520,11 @@ function timeInfo(g) {
 function timePills(g) {
   const t = timeInfo(g);
   return `<span class="pill">${t.dur}</span>` + (t.mine ? `<span class="pill">${t.mine}</span>` : '<span class="pill new">Jamais lancé</span>');
+}
+
+// Liens d'un jeu : lancer, son site officiel (via /api/site, page Steam à défaut), sa page Steam, plus des liens propres à la section.
+function linksHTML(g, extra = '') {
+  return `<div class="links"><a href="steam://run/${g.appid}">▶ Lancer dans Steam</a><a href="/api/site?appid=${g.appid}" target="_blank" rel="noopener">🌐 Voir la page du jeu</a><a href="https://store.steampowered.com/app/${g.appid}" target="_blank" rel="noopener">Page Steam</a>${extra}</div>`;
 }
 
 function factsHTML(r) {
@@ -541,10 +567,10 @@ function renderResults() {
     el.innerHTML = top.map((r, i) => `<article class="card ${r.g.appid === S.picked ? 'pick' : ''}">${cover(r.g)}<div class="cbody">
       <div class="rank">${r.g.appid === S.picked ? 'Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
       <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}
-      <div style="font-size:12px"><a href="steam://run/${r.g.appid}">▶ Lancer dans Steam</a> · <a href="https://store.steampowered.com/app/${r.g.appid}" target="_blank" rel="noopener">Page Steam</a> · <a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a></div>
+      ${linksHTML(r.g, `<a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a>`)}
       ${actsHTML(r.g.appid)}${r.g.appid === S.picked ? '<button class="btn hot sm" data-act="dice" style="align-self:flex-start">🎲 Un autre</button>' : ''}</div></article>`).join('');
   }
-  renderTrends();
+  renderTrends(); renderDuel();
   if ($('#pile')?.open) renderPile();
 }
 
@@ -565,31 +591,105 @@ function renderTrends() {
   }
   el.innerHTML = `<div class="trends">${list.map((t) => `<article class="card">${cover(t.g)}<div class="cbody">
     <div class="title">${esc(t.g.name)}</div>${liveFactsHTML(t)}
-    <div style="font-size:12px"><a href="steam://run/${t.g.appid}">▶ Lancer dans Steam</a> · <a href="https://steamcharts.com/app/${t.g.appid}" target="_blank" rel="noopener">Courbe des joueurs</a></div>
+    ${linksHTML(t.g, `<a href="https://steamcharts.com/app/${t.g.appid}" target="_blank" rel="noopener">Courbe des joueurs</a>`)}
     ${S.status[t.g.appid] === 'playing' ? '' : `<div class="acts"><button class="btn sm pri" data-act="go" data-id="${t.g.appid}">C'est parti</button><button class="btn sm ghost" data-act="skip" data-id="${t.g.appid}">Pas intéressé</button></div>`}
   </div></article>`).join('')}</div>`;
 }
 
+const VIEWS = { reco: 'Les recos (selon tes filtres)', all: 'Toute ta bibliothèque', never: 'Jamais lancés', done: 'Marqués finis', skip: 'Écartés (pas intéressé)', playing: 'En cours' };
+const SORTS = { score: 'Trier : pertinence', duel: 'Trier : tes duels', short: "Trier : plus courts d'abord", hours: 'Trier : ton temps de jeu', name: 'Trier : nom' };
 function renderPile() {
   const body = $('#pilebody'); if (!body) return;
   if (!body.dataset.ready) {
     body.innerHTML = `<div class="toolbar"><input type="search" id="pq" placeholder="Rechercher dans ta pile…" value="${esc(S.q)}">
-      <select id="psort"><option value="score">Trier : pertinence</option><option value="short">Trier : plus courts d'abord</option><option value="name">Trier : nom</option></select></div><div class="list" id="plist"></div>`;
+      <select id="pview" aria-label="Quels jeux afficher">${Object.entries(VIEWS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      <select id="psort" aria-label="Ordre">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <p class="sub" id="pcount" style="margin:0 0 4px"></p><div class="list" id="plist"></div>`;
     body.dataset.ready = '1';
     $('#pq').addEventListener('input', (e) => { S.q = e.target.value.trim().toLowerCase(); renderPileList(); });
-    $('#psort').value = S.sort;
+    $('#pview').addEventListener('change', (e) => { S.view = e.target.value; renderPileList(); });
     $('#psort').addEventListener('change', (e) => { S.sort = e.target.value; renderPileList(); });
   }
+  $('#pview').value = S.view; $('#psort').value = S.sort;
   renderPileList();
 }
+function pileRows() {
+  if (S.view === 'reco') return lastRanked;
+  const byId = new Map(lastRanked.map((r) => [r.g.appid, r]));
+  const keep = {
+    all: () => true,
+    never: (g) => !g.playtime,
+    done: (g) => S.status[g.appid] === 'done',
+    skip: (g) => S.status[g.appid] === 'skip',
+    playing: (g) => S.status[g.appid] === 'playing',
+  }[S.view];
+  return S.games.filter(keep).map((g) => byId.get(g.appid) || (({ min } = durOf(g.appid) || {}) => ({ g, m: S.meta[g.appid], h: min ? min / 60 : null, hits: [], score: 0 }))());
+}
+function rowActsHTML(r) {
+  const id = r.g.appid; const st = S.status[id];
+  if (st === 'done') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Pas fini finalement</button></div>`;
+  if (st === 'skip') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Finalement, ça m'intéresse</button></div>`;
+  if (st === 'playing') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Plus en cours</button><button class="btn sm" data-act="done" data-id="${id}">Déjà fini</button></div>`;
+  const canPick = lastRanked.some((x) => x.g.appid === id);
+  return actsHTML(id, true).replace('<div class="acts">', '<div class="acts">' + (canPick ? `<button class="btn sm" data-act="pickthis" data-id="${id}">Choisir</button>` : ''));
+}
 function renderPileList() {
-  let l = lastRanked.filter((r) => !S.q || r.g.name.toLowerCase().includes(S.q));
+  let l = pileRows().filter((r) => !S.q || r.g.name.toLowerCase().includes(S.q));
   if (S.sort === 'short') l = [...l].sort((a, b) => (a.h ?? 999) - (b.h ?? 999));
   if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, 'fr'));
+  if (S.sort === 'hours') l = [...l].sort((a, b) => b.g.playtime - a.g.playtime);
+  if (S.sort === 'duel') l = [...l].sort((a, b) => (S.duel[b.g.appid]?.r || 0) - (S.duel[a.g.appid]?.r || 0) || b.score - a.score);
+  if (S.sort === 'score' && S.view !== 'reco') l = [...l].sort((a, b) => b.score - a.score || b.g.playtime - a.g.playtime);
+  $('#pcount').textContent = `${l.length} jeu${l.length > 1 ? 'x' : ''}`;
   const shown = l.slice(0, 200);
-  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g))}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
+  $('#plist').innerHTML = shown.length ? shown.map((r) => {
+    const d = S.duel[r.g.appid];
+    const st = { done: 'Fini', skip: 'Écarté', playing: 'En cours' }[S.status[r.g.appid]];
+    return `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g))}${st ? ' · ' + st : ''}${d?.n ? ` · ⚔️ ${d.r > 0 ? '+' : ''}${Math.round(d.r)}` : ''}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small>${linksHTML(r.g)}</div>${rowActsHTML(r)}</div>`;
+  }).join('')
     + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${l.length - 200} autres jeux. Affine ta recherche pour les voir.</p>` : '')
-    : '<p class="empty">Rien dans ta pile ne correspond.</p>';
+    : '<p class="empty">Aucun jeu ici.</p>';
+}
+
+/* ---------------- versus ---------------- */
+// Le gagnant reste en lice (3 victoires d'affilée au plus), l'adversaire est pris parmi les meilleures recos les moins souvent vues.
+function duelPool() { return lastRanked.slice(0, 30).map((r) => r.g.appid); }
+function nextChallenger(exclude) {
+  const pool = duelPool().filter((id) => !exclude.includes(id));
+  if (!pool.length) return null;
+  const n = (id) => S.duel[id]?.n || 0;
+  const min = Math.min(...pool.map(n));
+  const least = pool.filter((id) => n(id) === min);
+  return least[Math.floor(Math.random() * least.length)];
+}
+function ensurePair() {
+  const pool = duelPool();
+  if (pool.length < 2) { S.pair = null; return; }
+  let [a, b] = S.pair || [];
+  if (!pool.includes(a)) { a = nextChallenger([b]); S.streak = 0; }
+  if (!pool.includes(b) || b === a) b = nextChallenger([a]);
+  S.pair = a && b ? [a, b] : null;
+}
+function elo(win, lose) {
+  const W = S.duel[win] || { r: 0, n: 0 }; const L = S.duel[lose] || { r: 0, n: 0 };
+  const e = 1 / (1 + 10 ** ((L.r - W.r) / 400));
+  const k = 32 * (1 - e);
+  S.duel[win] = { r: W.r + k, n: W.n + 1 }; S.duel[lose] = { r: L.r - k, n: L.n + 1 };
+}
+function renderDuel() {
+  const el = $('#duel'); if (!el) return;
+  ensurePair();
+  if (!S.pair) { el.innerHTML = '<p class="empty">Il faut au moins deux jeux dans tes recos pour lancer un duel.</p>'; return; }
+  const card = (id) => {
+    const g = S.games.find((x) => x.appid === id);
+    return `<button class="card" data-act="vote" data-id="${id}" aria-label="Je préfère ${esc(g.name)}">${cover(g)}<div class="cbody">
+      <div class="title">${esc(g.name)}</div><div class="facts">${timePills(g)}</div>
+      ${id === S.pair[0] && S.streak ? `<div class="streak">🏆 ${S.streak} victoire${S.streak > 1 ? 's' : ''} d'affilée</div>` : ''}</div></button>`;
+  };
+  const played = Object.values(S.duel).reduce((a, d) => a + d.n, 0) / 2;
+  el.innerHTML = `<div class="duel">${card(S.pair[0])}<div class="vs">VS</div>${card(S.pair[1])}</div>
+    <div class="dueltools"><button class="btn sm" data-act="vote" data-id="0">Aucun des deux</button><button class="btn sm ghost" data-act="duelskip">Passer</button>
+    <span>${Math.round(played)} duel${played >= 2 ? 's' : ''} joué${played >= 2 ? 's' : ''}</span>${played ? '<button class="btn sm ghost" data-act="duelreset">Remettre à zéro</button>' : ''}</div>`;
 }
 
 /* ---------------- actions ---------------- */
@@ -617,6 +717,31 @@ const ACTIONS = {
   skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
   pickthis: (t) => { S.picked = +t.dataset.id; renderResults(); showNext(); },
   resume: () => enrich(),
+  pileview: (t) => {
+    const v = t.dataset.v;
+    S.view = v === 'hours' ? 'all' : v; S.sort = v === 'hours' ? 'hours' : v === 'all' || v === 'never' ? 'name' : 'score'; S.q = '';
+    const d = $('#pile'); d.open = true; const pq = $('#pq'); if (pq) pq.value = '';
+    renderPile(); d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  },
+  unmark: (t) => { const id = +t.dataset.id; delete S.status[id]; saveUser(); toast('C’est noté, le jeu revient dans ta pile.'); renderResults(); },
+  vote: (t) => {
+    const id = +t.dataset.id; const [a, b] = S.pair || [];
+    if (!a) return;
+    if (!id) { // aucun des deux : les deux reculent un peu, on change les deux
+      for (const x of [a, b]) { const d = S.duel[x] || { r: 0, n: 0 }; S.duel[x] = { r: d.r - 16, n: d.n + 1 }; }
+      S.pair = null; S.streak = 0;
+      const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); if (c1 && c2) S.pair = [c1, c2];
+    } else {
+      const lose = id === a ? b : a;
+      elo(id, lose);
+      S.streak = id === a ? S.streak + 1 : 1;
+      if (S.streak > 3) { S.streak = 0; const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); S.pair = c1 && c2 ? [c1, c2] : [id, nextChallenger([id, lose])]; }
+      else S.pair = [id, nextChallenger([id, lose])];
+    }
+    saveUser(); renderResults();
+  },
+  duelskip: () => { const [a, b] = S.pair || []; const c1 = nextChallenger([a, b]); const c2 = c1 && nextChallenger([a, b, c1]); S.pair = c1 && c2 ? [c1, c2] : null; S.streak = 0; renderDuel(); },
+  duelreset: () => { S.duel = {}; S.pair = null; S.streak = 0; saveUser(); toast('Duels remis à zéro'); renderResults(); },
 };
 document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });
 document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb } from '../src/worker.js';
+import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb, siteFromStore } from '../src/worker.js';
 
 test('parseProfile reconnaît les formats courants', () => {
   assert.deepEqual(parseProfile('https://steamcommunity.com/profiles/76561197960287930/'), { steamid: '76561197960287930' });
@@ -157,4 +157,24 @@ test('ttb : durées IGDB en lot, null pour les jeux inconnus', async () => {
   assert.equal(d.status, 'ok');
   assert.deepEqual(d.ttb, { 10: { hastily: 300, normally: 600, completely: 1200, count: 40 }, 20: null, 30: null });
   assert.equal(calls.filter((c) => c.includes('igdb.com')).length, 2);
+});
+
+test('siteFromStore : site http(s) seulement', () => {
+  assert.equal(siteFromStore({ 10: { success: true, data: { website: 'https://jeu.example/ ' } } }, 10), 'https://jeu.example/');
+  assert.equal(siteFromStore({ 10: { success: true, data: { website: 'javascript:alert(1)' } } }, 10), null);
+  assert.equal(siteFromStore({ 10: { success: true, data: { website: null } } }, 10), null);
+  assert.equal(siteFromStore({ 10: { success: false } }, 10), null);
+});
+
+test('site : redirige vers le site du jeu, sinon vers la page Steam', async () => {
+  let { ctx } = setup([['appdetails?appids=10', { 10: { success: true, data: { website: 'https://jeu.example/' } } }]]);
+  let r = await worker.fetch(new Request('https://x.dev/api/site?appid=10'), env, ctx);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), 'https://jeu.example/');
+  ({ ctx } = setup([['appdetails?appids=20', { 20: { success: true, data: {} } }]]));
+  r = await worker.fetch(new Request('https://x.dev/api/site?appid=20'), env, ctx);
+  assert.equal(r.headers.get('location'), 'https://store.steampowered.com/app/20');
+  ({ ctx } = setup([]));
+  r = await worker.fetch(new Request('https://x.dev/api/site?appid=30'), env, ctx);
+  assert.equal(r.headers.get('location'), 'https://store.steampowered.com/app/30');
 });

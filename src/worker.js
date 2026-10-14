@@ -263,6 +263,29 @@ async function ttb(url, env, ctx) {
   return json({ status: 'ok', ttb: await igdbBatch(ids, env, ctx) });
 }
 
+// Site officiel d'un jeu, lu sur sa fiche Steam. Seuls les liens http(s) sont acceptés.
+export function siteFromStore(d, appid) {
+  const raw = d?.[appid]?.success ? d[appid].data?.website : null;
+  if (!raw) return null;
+  try {
+    const u = new URL(String(raw).trim());
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch (e) { return null; }
+}
+
+// GET /api/site?appid=X : redirige vers le site officiel du jeu, ou vers sa page Steam s'il n'en a pas.
+async function site(url, ctx) {
+  const appid = Number(url.searchParams.get('appid'));
+  if (!Number.isInteger(appid) || appid <= 0) return json({ error: 'bad_input', message: 'Paramètre appid manquant.' }, 400);
+  const store = `https://store.steampowered.com/app/${appid}`;
+  let target = null;
+  try {
+    target = await cached(`site/v1/${appid}`, META_TTL, ctx, async () =>
+      siteFromStore(await getJSON(`https://store.steampowered.com/api/appdetails?appids=${appid}&filters=basic`), appid) || '');
+  } catch (e) { target = null; }
+  return Response.redirect(target || store, 302);
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -275,6 +298,7 @@ export default {
       if (url.pathname === '/api/players') return await players(url, ctx);
       if (url.pathname === '/api/charts') return await charts(env, ctx);
       if (url.pathname === '/api/ttb') return await ttb(url, env, ctx);
+      if (url.pathname === '/api/site') return await site(url, ctx);
     } catch (e) {
       return json({ error: 'upstream', message: 'Steam ne répond pas pour le moment. Réessaie dans une minute.' }, 502);
     }
