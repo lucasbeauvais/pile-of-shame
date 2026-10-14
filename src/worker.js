@@ -5,6 +5,8 @@ const STEAM = 'https://api.steampowered.com';
 const META_TTL = 60 * 60 * 24 * 30; // 30 jours de cache pour les infos d'un jeu
 const MAX_IDS = 10;                  // jeux par appel à /api/meta
 const SPY_DELAY = 1000;              // SteamSpy demande 1 requête par seconde
+const LIVE_TTL = 60 * 30;            // 30 min de cache pour les joueurs connectés et le top Steam
+const MAX_LIVE_IDS = 15;             // jeux par appel à /api/players (limite de sous-requêtes d'un Worker)
 
 const CORS = { 'access-control-allow-origin': '*' };
 
@@ -49,7 +51,45 @@ export function normalizeSpy(d) {
     average: Number(d.average_forever) || 0, // minutes
     pos: Number(d.positive) || 0,
     neg: Number(d.negative) || 0,
+    ccu: Number(d.ccu) || 0,                 // pic de joueurs simultanés la veille, sert de point de comparaison
   };
+}
+
+// Réduit le top « jeux les plus joués » de Steam. lastWeekRank vaut 0 pour une nouvelle entrée.
+export function normalizeCharts(d) {
+  const ranks = d?.response?.ranks;
+  if (!Array.isArray(ranks)) return null;
+  return ranks
+    .filter((r) => r && Number(r.appid) > 0)
+    .map((r) => ({
+      appid: Number(r.appid),
+      rank: Number(r.rank) || 0,
+      lastWeekRank: Number(r.last_week_rank) || 0,
+      peak: Number(r.peak_in_game) || 0,
+    }));
+}
+
+async function cached(key, ttl, ctx, load) {
+  const cache = caches.default;
+  const req = new Request(`https://pileofshame.cache/${key}`);
+  const hit = await cache.match(req);
+  if (hit) return hit.json();
+  const v = await load();
+  if (v != null) {
+    ctx.waitUntil(cache.put(req, new Response(JSON.stringify(v), {
+      headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${ttl}` },
+    })));
+  }
+  return v;
+}
+
+function parseIds(url, max) {
+  return [...new Set(
+    (url.searchParams.get('ids') || '')
+      .split(',')
+      .map(Number)
+      .filter((n) => Number.isInteger(n) && n > 0),
+  )].slice(0, max);
 }
 
 async function profile(url, env) {
@@ -103,12 +143,7 @@ async function profile(url, env) {
 }
 
 async function meta(url, ctx) {
-  const ids = [...new Set(
-    (url.searchParams.get('ids') || '')
-      .split(',')
-      .map(Number)
-      .filter((n) => Number.isInteger(n) && n > 0),
-  )].slice(0, MAX_IDS);
+  const ids = parseIds(url, MAX_IDS);
   if (!ids.length) return json({ error: 'bad_input', message: 'Paramètre ids manquant.' }, 400);
 
   const cache = caches.default;
@@ -137,6 +172,33 @@ async function meta(url, ctx) {
   return json({ meta: out });
 }
 
+// Joueurs connectés en ce moment, jeu par jeu. null si Steam ne connaît pas le chiffre.
+async function players(url, ctx) {
+  const ids = parseIds(url, MAX_LIVE_IDS);
+  if (!ids.length) return json({ error: 'bad_input', message: 'Paramètre ids manquant.' }, 400);
+  const out = {};
+  await Promise.all(ids.map(async (id) => {
+    try {
+      out[id] = await cached(`players/v1/${id}`, LIVE_TTL, ctx, async () => {
+        const r = await getJSON(`${STEAM}/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid=${id}`);
+        return r?.response?.result === 1 ? Number(r.response.player_count) || 0 : null;
+      });
+    } catch (e) {
+      out[id] = null;
+    }
+  }));
+  return json({ players: out });
+}
+
+// Top 100 des jeux les plus joués sur Steam, avec leur rang de la semaine précédente.
+async function charts(env, ctx) {
+  const key = env.STEAM_API_KEY ? `key=${env.STEAM_API_KEY}&` : '';
+  const ranks = await cached('charts/v1', LIVE_TTL, ctx, async () =>
+    normalizeCharts(await getJSON(`${STEAM}/ISteamChartsService/GetMostPlayedGames/v1/?${key}`)));
+  if (!ranks) return json({ error: 'upstream', message: 'Le classement Steam est indisponible pour le moment.' }, 502);
+  return json({ ranks }, 200, { 'cache-control': `public, max-age=${LIVE_TTL}` });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -146,6 +208,8 @@ export default {
     try {
       if (url.pathname === '/api/profile') return await profile(url, env);
       if (url.pathname === '/api/meta') return await meta(url, ctx);
+      if (url.pathname === '/api/players') return await players(url, ctx);
+      if (url.pathname === '/api/charts') return await charts(env, ctx);
     } catch (e) {
       return json({ error: 'upstream', message: 'Steam ne répond pas pour le moment. Réessaie dans une minute.' }, 502);
     }

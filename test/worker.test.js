@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseProfile, normalizeSpy } from '../src/worker.js';
+import worker, { parseProfile, normalizeSpy, normalizeCharts } from '../src/worker.js';
 
 test('parseProfile reconnaît les formats courants', () => {
   assert.deepEqual(parseProfile('https://steamcommunity.com/profiles/76561197960287930/'), { steamid: '76561197960287930' });
@@ -17,6 +17,8 @@ test('normalizeSpy garde les tags triés et les durées', () => {
   assert.deepEqual(m.tags, ['Roguelike', 'RPG', 'Indie']);
   assert.equal(m.median, 480);
   assert.equal(m.pos, 90);
+  assert.equal(m.ccu, 0);
+  assert.equal(normalizeSpy({ appid: 3, ccu: 812 }).ccu, 812);
   assert.deepEqual(normalizeSpy({ appid: 2, tags: [] }).tags, []);
   assert.equal(normalizeSpy(null), null);
 });
@@ -86,4 +88,48 @@ test('clé absente → 500 explicite', async () => {
   const { ctx } = setup([]);
   const r = await worker.fetch(new Request('https://x.dev/api/profile?u=abc'), {}, ctx);
   assert.equal(r.status, 500);
+});
+
+test('normalizeCharts garde rang, rang précédent et pic', () => {
+  const c = normalizeCharts({ response: { ranks: [
+    { rank: 1, appid: 730, last_week_rank: 1, peak_in_game: 1500000 },
+    { rank: 12, appid: 1237950, last_week_rank: 0, peak_in_game: 40000 },
+    { rank: 13 },
+  ] } });
+  assert.deepEqual(c, [
+    { appid: 730, rank: 1, lastWeekRank: 1, peak: 1500000 },
+    { appid: 1237950, rank: 12, lastWeekRank: 0, peak: 40000 },
+  ]);
+  assert.equal(normalizeCharts({}), null);
+});
+
+test('players : compte des joueurs, null si inconnu, mis en cache', async () => {
+  const { calls, ctx, flush } = setup([
+    ['appid=10', { response: { player_count: 4321, result: 1 } }],
+    ['appid=20', { response: { result: 42 } }],
+  ]);
+  const r = await worker.fetch(new Request('https://x.dev/api/players?ids=10,20,30'), env, ctx);
+  assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).players, { 10: 4321, 20: null, 30: null });
+  await flush();
+  const before = calls.length;
+  const r2 = await worker.fetch(new Request('https://x.dev/api/players?ids=10'), env, ctx);
+  assert.equal((await r2.json()).players['10'], 4321);
+  assert.equal(calls.length, before);
+});
+
+test('players : ids manquants → 400', async () => {
+  const { ctx } = setup([]);
+  const r = await worker.fetch(new Request('https://x.dev/api/players'), env, ctx);
+  assert.equal(r.status, 400);
+});
+
+test('charts : top Steam normalisé, 502 si Steam ne répond pas', async () => {
+  let { ctx } = setup([['GetMostPlayedGames', { response: { ranks: [{ rank: 3, appid: 1237950, last_week_rank: 40, peak_in_game: 9000 }] } }]]);
+  const r = await worker.fetch(new Request('https://x.dev/api/charts'), env, ctx);
+  assert.equal(r.status, 200);
+  assert.deepEqual((await r.json()).ranks, [{ appid: 1237950, rank: 3, lastWeekRank: 40, peak: 9000 }]);
+  ({ ctx } = setup([]));
+  const r2 = await worker.fetch(new Request('https://x.dev/api/charts'), env, ctx);
+  assert.equal(r2.status, 502);
 });

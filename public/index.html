@@ -86,7 +86,7 @@ form.go input:focus{border-color:var(--acc)}
 .title{font-weight:750;font-size:17px;line-height:1.25}
 .facts{display:flex;flex-wrap:wrap;gap:5px}
 .pill{font-size:12px;border-radius:99px;padding:2px 8px;background:var(--panel2);color:var(--mute);white-space:nowrap}
-.pill.good{color:var(--ok)}.pill.new{color:var(--acc2)}
+.pill.good{color:var(--ok)}.pill.new{color:var(--acc2)}.pill.hot{color:var(--warn)}
 .why{font-size:13px;color:var(--mute)}
 .why b{color:var(--txt);font-weight:600}
 .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:4px}
@@ -108,6 +108,10 @@ details[open]>summary::before{content:"▾ "}
 footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,120px);background:var(--panel2);border:1px solid var(--acc);border-radius:10px;padding:10px 16px;transition:transform .25s;max-width:90vw;z-index:20}
 #toast.show{transform:translate(-50%,0)}
+.trends{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.trends .card .title{font-size:15px}
+@media (max-width:860px){.trends{grid-template-columns:1fr 1fr}}
+@media (max-width:520px){.trends{grid-template-columns:1fr}}
 @media (max-width:860px){.recos{grid-template-columns:1fr}.ctrl{grid-template-columns:1fr}.steps{grid-template-columns:1fr}}
 @media (max-width:520px){.li{grid-template-columns:72px 1fr}.li img,.li .ph{width:72px}.li .acts{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -116,7 +120,7 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30p
 <body>
 <header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who" id="who"></div></div></header>
 <main class="wrap" id="app"></main>
-<footer class="wrap">Données : API Steam et SteamSpy. Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</footer>
+<footer class="wrap">Données : API Steam (bibliothèque, joueurs connectés, classement) et SteamSpy (genres, durées, avis). Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</footer>
 <div id="toast" role="status"></div>
 
 <script>
@@ -133,12 +137,16 @@ const COOP_TAGS = ['Co-op', 'Online Co-Op', 'Local Co-Op', 'Local Multiplayer', 
 const NON_GAME = new Set(['Utilities', 'Software', 'Design & Illustration', 'Video Production', 'Audio Production', 'Animation & Modeling', 'Web Publishing', 'Photo Editing', 'Game Development', 'Software Training', 'Benchmark']);
 const GENERIC = new Set(['Singleplayer', 'Multiplayer', 'Great Soundtrack', 'Early Access', 'Free to Play', 'Controller', 'Full controller support', 'Indie', 'Casual', 'Atmospheric', 'Beautiful', 'Classic', 'Masterpiece', 'Addictive', 'Fun', 'Good Soundtrack', 'Steam Achievements']);
 const STARTED_MAX = 120; // minutes : en dessous, un jeu compte comme « à peine commencé »
+const LIVE_MAX = 60;      // jeux dont on demande le nombre de joueurs connectés
+const LIVE_MIN = 300;     // joueurs connectés à partir desquels un jeu « a du monde »
+const SPIKE = 1.5;        // joueurs actuels / pic habituel à partir duquel on parle de pic
 
 /* ---------------- utilitaires ---------------- */
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+function fmtN(n) { return n >= 10000 ? Math.round(n / 1000).toLocaleString('fr') + ' k' : n.toLocaleString('fr'); }
 function fmtH(min) { if (!min) return '0 h'; const h = min / 60; return h < 10 ? h.toFixed(1).replace('.', ',') + ' h' : Math.round(h) + ' h'; }
 function initials(n) { return esc((n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()); }
 function cover(g) {
@@ -154,6 +162,7 @@ const S = {
   hidden: new Set(), picked: null,
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score',
+  live: { players: {}, chart: {}, state: 'idle' },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
 function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started }); }
@@ -230,6 +239,38 @@ function ranked() {
   return S.games.map((g) => evaluate(g, aff)).filter(Boolean).sort((a, b) => b.score - a.score);
 }
 
+// Ce qui bouge dans la bibliothèque : beaucoup de joueurs, un pic par rapport à d'habitude, ou une remontée dans le top Steam.
+function liveOf(id) {
+  const players = S.live.players[id] ?? null;
+  const c = S.live.chart[id] || null;
+  const base = S.meta[id]?.ccu || 0;
+  const spike = players != null && base >= 50 ? players / base : null;
+  const climb = c ? (c.lastWeekRank ? c.lastWeekRank - c.rank : 100 - c.rank) : 0;
+  return { players, rank: c?.rank || 0, newEntry: !!c && !c.lastWeekRank, climb, spike };
+}
+function trending() {
+  const out = [];
+  for (const g of S.games) {
+    const st = S.status[g.appid];
+    if (st === 'done' || st === 'skip') continue;
+    const m = S.meta[g.appid];
+    if (m && isNonGame(m)) continue;
+    if (S.mode === 'coop' && !isCoop(m)) continue;
+    if (S.mode === 'solo' && isMultiOnly(m)) continue;
+    if (g.playtime >= STARTED_MAX && g.lastPlayed * 1000 > Date.now() - 30 * 864e5) continue; // tu y joues déjà
+    const l = liveOf(g.appid);
+    const busy = (l.players ?? 0) >= LIVE_MIN;
+    const spiking = l.spike != null && l.spike >= SPIKE && (l.players ?? 0) >= 100;
+    const rising = l.rank && l.climb >= 5;
+    if (!busy && !spiking && !rising) continue;
+    const heat = Math.log10(1 + (l.players ?? (l.rank ? 5000 : 0)))
+      + (spiking ? Math.min(l.spike, 5) : 0)
+      + (rising ? Math.min(l.climb, 50) / 10 : 0);
+    out.push({ g, m, l, heat });
+  }
+  return out.sort((a, b) => b.heat - a.heat);
+}
+
 /* ---------------- réseau ---------------- */
 async function analyze(input) {
   S.loading = true; S.error = null; render();
@@ -242,6 +283,7 @@ async function analyze(input) {
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
     S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true;
     S.hidden = new Set(); S.picked = null;
+    S.live = { players: {}, chart: {}, state: 'idle' };
     store('pos.last', input);
     const url = new URL(location.href); url.searchParams.set('u', input); history.replaceState(null, '', url);
     enrich();
@@ -259,6 +301,7 @@ async function enrich() {
   const queue = order.map((g) => g.appid).filter((id) => !S.meta[id]);
   S.enrich = { done: 0, total: queue.length, paused: false };
   renderProgress();
+  loadChart();
   for (let i = 0; i < queue.length; i += 10) {
     if (run !== enrichRun) return;
     const ids = queue.slice(i, i + 10);
@@ -269,11 +312,46 @@ async function enrich() {
       for (const id of ids) { const m = d.meta?.[id]; if (m) S.meta[id] = m; }
       saveMeta();
     } catch (e) {
-      S.enrich.paused = true; renderProgress(); return;
+      S.enrich.paused = true; renderProgress(); loadLive(run); return;
     }
     S.enrich.done = Math.min(queue.length, i + ids.length);
     renderProgress(); renderResults();
   }
+  if (run === enrichRun) loadLive(run);
+}
+
+async function loadChart() {
+  try {
+    const r = await fetch('/api/charts');
+    if (!r.ok) return;
+    const d = await r.json();
+    const owned = new Set(S.games.map((g) => g.appid));
+    S.live.chart = {};
+    for (const c of d.ranks || []) if (owned.has(c.appid)) S.live.chart[c.appid] = c;
+    renderTrends();
+  } catch (e) { /* le classement est un bonus : sans lui, on se contente des joueurs connectés */ }
+}
+
+// Joueurs connectés pour les jeux les plus susceptibles d'intéresser : ceux du top Steam, les meilleures recos, et tes jeux favoris.
+async function loadLive(run) {
+  if (S.live.state !== 'idle') return;
+  S.live.state = 'loading'; renderTrends();
+  const ids = [...new Set([
+    ...Object.keys(S.live.chart).map(Number),
+    ...ranked().slice(0, 35).map((r) => r.g.appid),
+    ...S.games.filter((g) => g.playtime >= STARTED_MAX).sort((a, b) => b.playtime - a.playtime).slice(0, 15).map((g) => g.appid),
+  ])].slice(0, LIVE_MAX);
+  for (let i = 0; i < ids.length; i += 15) {
+    if (run !== enrichRun) return;
+    try {
+      const r = await fetch('/api/players?ids=' + ids.slice(i, i + 15).join(','));
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      for (const [id, n] of Object.entries(d.players || {})) if (n != null) S.live.players[id] = n;
+    } catch (e) { break; }
+    renderTrends();
+  }
+  S.live.state = 'done'; renderResults();
 }
 
 /* ---------------- rendu ---------------- */
@@ -308,6 +386,11 @@ function render() {
         <button class="btn hot sm" data-act="dice">🎲 Laisse le hasard choisir</button>
       </div>
       <div class="recos" id="recos"></div>
+    </section>
+    <section class="panel">
+      <h2>🔥 Ça bouge en ce moment</h2>
+      <p class="sub">Les jeux de ta bibliothèque où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.</p>
+      <div id="trends"></div>
     </section>
     <section class="panel"><details id="pile"><summary>Toute ta pile</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
   renderStats(); renderProgress(); renderResults();
@@ -378,6 +461,8 @@ function factsHTML(r) {
   if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${p} % d'avis positifs</span>`); }
   f.push(r.g.playtime ? `<span class="pill">Commencé : ${fmtH(r.g.playtime)}</span>` : '<span class="pill new">Jamais lancé</span>');
   if (isCoop(r.m)) f.push('<span class="pill">Coop</span>');
+  const l = liveOf(r.g.appid);
+  if (l.players >= LIVE_MIN) f.push(`<span class="pill hot">${fmtN(l.players)} joueurs en ce moment</span>`);
   return `<div class="facts">${f.join('')}</div>`;
 }
 function whyHTML(r) {
@@ -413,7 +498,30 @@ function renderResults() {
       <div style="font-size:12px"><a href="steam://run/${r.g.appid}">▶ Lancer dans Steam</a> · <a href="https://store.steampowered.com/app/${r.g.appid}" target="_blank" rel="noopener">Page Steam</a> · <a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a></div>
       ${actsHTML(r.g.appid)}</div></article>`).join('');
   }
+  renderTrends();
   if ($('#pile')?.open) renderPile();
+}
+
+function liveFactsHTML(t) {
+  const f = [];
+  if (t.l.players != null) f.push(`<span class="pill hot">${fmtN(t.l.players)} joueurs en ce moment</span>`);
+  if (t.l.spike != null && t.l.spike >= SPIKE) f.push(`<span class="pill hot">Pic : ×${t.l.spike.toFixed(1).replace('.', ',')} par rapport à d'habitude</span>`);
+  if (t.l.rank) f.push(`<span class="pill">${t.l.rank}ᵉ sur Steam${t.l.newEntry ? ' · nouveau dans le top' : t.l.climb > 0 ? ` · +${t.l.climb} places en une semaine` : ''}</span>`);
+  f.push(t.g.playtime ? `<span class="pill">Tu y as joué ${fmtH(t.g.playtime)}</span>` : '<span class="pill new">Jamais lancé</span>');
+  return `<div class="facts">${f.join('')}</div>`;
+}
+function renderTrends() {
+  const el = $('#trends'); if (!el) return;
+  const list = trending().slice(0, 6);
+  if (!list.length) {
+    el.innerHTML = `<p class="empty">${S.live.state === 'done' ? 'Rien de particulier dans ta bibliothèque en ce moment. Repasse dans quelques jours.' : 'On regarde qui joue à quoi en ce moment…'}</p>`;
+    return;
+  }
+  el.innerHTML = `<div class="trends">${list.map((t) => `<article class="card">${cover(t.g)}<div class="cbody">
+    <div class="title">${esc(t.g.name)}</div>${liveFactsHTML(t)}
+    <div style="font-size:12px"><a href="steam://run/${t.g.appid}">▶ Lancer dans Steam</a> · <a href="https://steamcharts.com/app/${t.g.appid}" target="_blank" rel="noopener">Courbe des joueurs</a></div>
+    ${S.status[t.g.appid] === 'playing' ? '' : `<div class="acts"><button class="btn sm pri" data-act="go" data-id="${t.g.appid}">C'est parti</button><button class="btn sm ghost" data-act="skip" data-id="${t.g.appid}">Pas intéressé</button></div>`}
+  </div></article>`).join('')}</div>`;
 }
 
 function renderPile() {
