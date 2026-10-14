@@ -45,6 +45,12 @@ form.go input:focus{border-color:var(--acc)}
 
 .note{background:#2a2414;border:1px solid #5a4a20;color:#f2d58a;border-radius:10px;padding:12px 14px;margin:0;font-size:14px}
 .note b{color:#ffe7a8}
+.ig{text-align:center}
+.igbtn{display:block;background:#ff5400;color:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 6px 20px rgba(255,84,0,.25);transition:transform .15s,background .15s}
+.igbtn:hover{background:#ff6a1f;text-decoration:none;transform:translateY(-1px)}
+.igbtn b{display:block;font-size:20px;font-weight:800;letter-spacing:-.01em;line-height:1.2}
+.igbtn span{display:block;font-size:14px;font-weight:600;opacity:.92;margin-top:4px}
+.ig small{display:block;color:var(--mute);font-size:11px;margin-top:6px;opacity:.8}
 .err{background:#2a1517;border:1px solid #5a2a2d;color:#ffb4ae;border-radius:10px;padding:12px 14px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px}
 .panel h2{margin:0 0 4px;font-size:17px}
@@ -172,6 +178,7 @@ const STARTED_MAX = 120; // minutes : en dessous, un jeu compte comme « à pein
 const LIVE_MAX = 60;      // jeux dont on demande le nombre de joueurs connectés
 const LIVE_MIN = 300;     // joueurs connectés à partir desquels un jeu « a du monde »
 const SPIKE = 1.5;        // joueurs actuels / pic habituel à partir duquel on parle de pic
+const IG_URL = 'https://www.instant-gaming.com/?igr=gamer-6269878'; // lien affilié de Lucas
 const VS_ROUNDS = 10;     // duels avant que le survivant du versus devienne la reco
 
 /* ---------------- utilitaires ---------------- */
@@ -241,6 +248,7 @@ const I18N = {
     'vs.elimAria': 'Éliminer {g}', 'vs.elim': '✕ Éliminer', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Éliminer les deux', 'vs.restart': 'Recommencer',
     'toast.nomatch': 'Aucun jeu ne correspond à ces critères', 'toast.later': 'Mis de côté pour ce soir', 'toast.done': 'Bien joué ! Marqué comme fini.',
     'toast.skip': "C'est noté, on ne te le proposera plus.", 'toast.unmark': "C'est noté, le jeu revient dans ta pile.",
+    'ig.title': 'Encore des jeux que je lancerai pas !', 'ig.sub': 'Des jeux pas chers sur Instant Gaming', 'ig.aff': 'lien affilié',
     'note.hidden': "Le temps de jeu de ce profil est masqué : Steam renvoie 0 h pour tous ses jeux. Impossible donc de deviner tes goûts ou de savoir ce que tu as déjà commencé. Pour corriger : dans Steam, <b>Profil › Modifier le profil › Paramètres de confidentialité</b>, décoche « Toujours garder mon temps de jeu total privé ». En attendant, choisis tes genres avec ♥ dans « Tes goûts ».",
     'err.unexpected': 'Réponse inattendue du serveur.', 'err.load': 'Impossible de charger ce profil.', 'err.network': 'Connexion impossible. Vérifie ta connexion internet et réessaie.',
     'err.bad_input': "Je n'ai pas reconnu ce profil. Colle l'adresse de ta page de profil Steam (steamcommunity.com/id/… ou steamcommunity.com/profiles/…).",
@@ -298,6 +306,7 @@ const I18N = {
     'vs.elimAria': 'Eliminate {g}', 'vs.elim': '✕ Eliminate', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Eliminate both', 'vs.restart': 'Restart',
     'toast.nomatch': 'No game matches these filters', 'toast.later': 'Set aside for tonight', 'toast.done': 'Well played! Marked as finished.',
     'toast.skip': 'Got it, we will not suggest it again.', 'toast.unmark': 'Got it, the game is back in your pile.',
+    'ig.title': "More games I'll never launch!", 'ig.sub': 'Cheap games on Instant Gaming', 'ig.aff': 'affiliate link',
     'note.hidden': 'This profile hides its playtime: Steam returns 0 h for every game. So we cannot guess your taste or tell what you have already started. To fix it: in Steam, <b>Profile › Edit Profile › Privacy Settings</b>, untick "Always keep my total playtime private". Meanwhile, pick your genres with ♥ in "Your taste".',
     'err.unexpected': 'Unexpected answer from the server.', 'err.load': 'Could not load this profile.', 'err.network': 'Could not connect. Check your internet connection and try again.',
     'err.bad_input': 'I did not recognise this profile. Paste the link to your Steam profile page (steamcommunity.com/id/… or steamcommunity.com/profiles/…).',
@@ -597,6 +606,10 @@ function render() {
       <h2>⚔️ Versus</h2>
       <p class="sub">${t('vs.sub', { n: VS_ROUNDS })}</p>
       <div id="duel"></div>
+    </section>
+    <section class="ig">
+      <a class="igbtn" href="${IG_URL}" target="_blank" rel="sponsored noopener"><b>${t('ig.title')}</b><span>${t('ig.sub')} →</span></a>
+      <small>${t('ig.aff')}</small>
     </section>
     <section class="panel">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-bottom:4px">
