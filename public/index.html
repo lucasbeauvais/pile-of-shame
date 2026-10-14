@@ -96,6 +96,8 @@ button.stat::after{content:"Voir →";display:block;font-size:11px;color:var(--a
 
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
+.tag small{color:var(--mute);font-size:11px}
+.tagq{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:10px}
 .tag i{font-style:normal;width:28px;height:4px;border-radius:2px;background:var(--line);position:relative;overflow:hidden}
 .tag i::after{content:"";position:absolute;inset:0;width:var(--w);background:var(--acc)}
 .tag.like{border-color:var(--ok);background:#173023}
@@ -441,8 +443,8 @@ function render() {
     </section>
     <section class="panel">
       <h2>Tes goûts</h2>
-      <p class="sub">Devinés d'après les jeux où tu as passé le plus de temps. Clique sur un tag pour dire que tu en veux (♥), clique encore pour l'écarter (✕), une troisième fois pour revenir au neutre.</p>
-      <div class="tags" id="tags"></div>
+      <p class="sub">Devinés d'après les jeux où tu as passé le plus de temps. Touche un genre pour dire que tu en veux (♥), encore pour l'écarter (✕), une troisième fois pour revenir au neutre. Le chiffre indique combien de tes jeux en font partie.</p>
+      <div id="tags"></div>
     </section>
     <section id="next" style="scroll-margin-top:12px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
@@ -512,20 +514,33 @@ function renderProgress() {
     : `<div class="progress"><span>Analyse des genres et durées : ${done}/${total}</span><div class="bar"><div style="width:${total ? done / total * 100 : 0}%"></div></div></div>`;
 }
 
+// Tous les genres présents dans ta pile : tes choix ♥ / ✕ d'abord, puis par affinité, puis par nombre de jeux.
+// 16 visibles d'emblée, le reste derrière « Voir tous les genres » (avec une recherche).
+const TAGS_SHOWN = 16;
 function renderTags() {
   const el = $('#tags'); if (!el) return;
   const aff = affinity();
-  const backlogCount = {};
-  for (const g of S.games) { if (g.playtime >= STARTED_MAX) continue; (S.meta[g.appid]?.tags || []).slice(0, 6).forEach((t) => { if (!GENERIC.has(t) && !NON_GAME.has(t)) backlogCount[t] = (backlogCount[t] || 0) + 1; }); }
-  const fromAff = Object.entries(aff).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([t]) => t);
-  const fromBacklog = Object.entries(backlogCount).sort((a, b) => b[1] - a[1]).map(([t]) => t).filter((t) => !fromAff.includes(t)).slice(0, 8);
-  const all = [...new Set([...S.prefs.like, ...S.prefs.dislike, ...fromAff, ...fromBacklog])];
-  if (!all.length) { el.innerHTML = '<span class="sub" style="margin:0">Les tags apparaissent au fil de l\'analyse…</span>'; return; }
-  el.innerHTML = all.map((t) => {
-    const cls = S.prefs.like.includes(t) ? 'like' : S.prefs.dislike.includes(t) ? 'dislike' : '';
-    const w = Math.round((aff[t] || 0) * 100);
-    return `<span class="tag ${cls}" data-act="tag" data-v="${esc(t)}" role="button" tabindex="0">${esc(t)}${!cls && w ? `<i style="--w:${w}%" title="Affinité ${w} %"></i>` : ''}</span>`;
-  }).join('');
+  const count = {};
+  for (const g of S.games) {
+    if (S.status[g.appid] === 'done' || S.status[g.appid] === 'skip') continue;
+    (S.meta[g.appid]?.tags || []).slice(0, 8).forEach((t) => { if (!GENERIC.has(t) && !NON_GAME.has(t)) count[t] = (count[t] || 0) + 1; });
+  }
+  const chosen = [...S.prefs.like, ...S.prefs.dislike];
+  const rest = Object.keys({ ...count, ...aff }).filter((t) => !chosen.includes(t))
+    .sort((a, b) => (aff[b] || 0) - (aff[a] || 0) || (count[b] || 0) - (count[a] || 0) || a.localeCompare(b, 'fr'));
+  const all = [...chosen, ...rest];
+  if (!all.length) { el.innerHTML = '<span class="sub" style="margin:0">Les genres apparaissent au fil de l\'analyse…</span>'; return; }
+  const q = (S.tagQ || '').toLowerCase();
+  const list = S.allTags ? all.filter((t) => !q || t.toLowerCase().includes(q)) : all.slice(0, Math.max(TAGS_SHOWN, chosen.length));
+  const keepFocus = document.activeElement?.id === 'tagq';
+  el.innerHTML = (S.allTags ? `<input type="search" id="tagq" class="tagq" placeholder="Chercher un genre…" value="${esc(S.tagQ || '')}" aria-label="Chercher un genre">` : '')
+    + `<div class="tags">${list.map((t) => {
+      const cls = S.prefs.like.includes(t) ? 'like' : S.prefs.dislike.includes(t) ? 'dislike' : '';
+      const w = Math.round((aff[t] || 0) * 100);
+      return `<span class="tag ${cls}" data-act="tag" data-v="${esc(t)}" role="button" tabindex="0">${esc(t)}${count[t] ? `<small>${count[t]}</small>` : ''}${!cls && w ? `<i style="--w:${w}%" title="Affinité ${w} %"></i>` : ''}</span>`;
+    }).join('') || '<span class="sub" style="margin:0">Aucun genre ne correspond.</span>'}</div>`
+    + (all.length > TAGS_SHOWN ? `<button class="btn sm ghost" data-act="alltags" style="margin-top:10px">${S.allTags ? 'Réduire la liste' : `Voir tous les genres (${all.length})`}</button>` : '');
+  if (keepFocus) { const i = $('#tagq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
 }
 
 // Durée du jeu (temps médian des joueurs, SteamSpy) et ton temps de jeu (Steam), avec ta progression quand on connaît les deux.
@@ -774,6 +789,7 @@ const ACTIONS = {
   skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
   pickthis: (t) => { S.picks = [+t.dataset.id]; renderResults(); showNext(); },
   resume: () => enrich(),
+  alltags: () => { S.allTags = !S.allTags; S.tagQ = ''; renderTags(); },
   pileview: (t) => {
     const v = t.dataset.v;
     S.view = v === 'hours' ? 'all' : v; S.sort = v === 'hours' ? 'hours' : v === 'all' || v === 'never' ? 'name' : 'score'; S.q = '';
@@ -788,6 +804,7 @@ const ACTIONS = {
 };
 document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });
 document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });
+document.addEventListener('input', (e) => { if (e.target.id === 'tagq') { S.tagQ = e.target.value.trim(); renderTags(); } });
 document.addEventListener('change', (e) => {
   if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); }
   if (e.target.id === 'played') { S.played = e.target.checked; S.picks = []; saveUser(); renderResults(); }

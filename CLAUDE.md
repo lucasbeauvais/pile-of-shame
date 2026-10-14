@@ -56,6 +56,7 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
   - mode coop : uniquement les jeux avec un tag Co-op, Online Co-Op, Local Co-Op ou Split Screen ;
   - mode solo : on retire les jeux MMO et ceux tournés vers le PvP sans tag Singleplayer ;
   - un tag marqué ✕ dans le top 5 des tags du jeu.
+- **Tes goûts** (`renderTags`) : tous les genres de la pile (8 premiers tags de chaque jeu, hors fini / écarté, hors génériques), avec le nombre de jeux concernés. Ordre : ♥ / ✕ choisis, puis affinité, puis nombre de jeux. 16 visibles (`TAGS_SHOWN`), le reste derrière « Voir tous les genres », avec une recherche.
 - **Affinité** : somme des tags des jeux joués plus de 2 h, pondérée par log(1 + heures) et par le rang du tag, puis normalisée sur 0–1. Les tags génériques (Indie, Singleplayer…) sont ignorés.
 - **Score** :
   - avec un créneau choisi : `0.45·goûts + 0.22·avis + 0.33·durée` ;
