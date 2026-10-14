@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Labo des durées</title>
+<meta name="description" content="Compare plusieurs façons d'estimer la durée d'un jeu Steam avec les durées que tu connais.">
+<style>
+:root{--bg:#0e1319;--panel:#161d26;--panel2:#1d2631;--line:#2a3644;--txt:#e6edf3;--mute:#8b98a5;--acc:#66c0f4;--acc2:#ff7a59;--ok:#5ec27a;--warn:#e3b341;--bad:#e5534b;--r:12px;color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:14px;padding-block:14px;flex-wrap:wrap}
+.logo{font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--txt)}
+.logo span{color:var(--acc2)}
+main{padding-block:24px 70px;display:flex;flex-direction:column;gap:18px}
+h1{font-size:clamp(24px,4vw,34px);margin:0;letter-spacing:-.02em}
+.lead{color:var(--mute);margin:6px 0 0;max-width:70ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.panel h2{margin:0 0 8px;font-size:16px}
+.sub{color:var(--mute);font-size:13px;margin:0 0 10px}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 14px;cursor:pointer;font-weight:650;white-space:nowrap}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#081521}
+.btn.sm{padding:5px 10px;font-size:13px;border-radius:8px}
+.btn[disabled]{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.row input{flex:1 1 240px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.err{background:#2a1517;border:1px solid #5a2a2d;color:#ffb4ae;border-radius:10px;padding:10px 14px}
+.note{background:#2a2414;border:1px solid #5a4a20;color:#f2d58a;border-radius:10px;padding:10px 14px;font-size:14px}
+.scores{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.score{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.score b{display:block;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.15}
+.score span{font-size:12px;color:var(--mute)}
+.score.best{border-color:var(--ok)}
+.score.best b{color:var(--ok)}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r)}
+table{border-collapse:collapse;width:100%;min-width:820px;font-size:14px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{background:var(--panel2);color:var(--mute);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0}
+th:first-child,td:first-child{text-align:left;white-space:normal;min-width:130px;max-width:170px;position:sticky;left:0;z-index:1;background:var(--panel);box-shadow:1px 0 0 var(--line)}
+th:first-child{background:var(--panel2);z-index:2}
+td:first-child{background:var(--bg)}
+td small{display:block;color:var(--mute);font-size:12px}
+td.na{color:var(--mute)}
+td.close{color:var(--ok)}
+td.far{color:var(--bad)}
+td input{width:70px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 6px;text-align:right}
+tr:last-child td{border-bottom:0}
+.add{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:4px 10px;font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--acc)}
+footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30px}
+</style>
+</head>
+<body>
+<header><div class="wrap top"><a class="logo" href="/">Pile of <span>Shame</span></a><span style="color:var(--mute)">· Labo des durées</span></div></header>
+<main class="wrap" id="app"></main>
+<footer class="wrap">Durées : SteamSpy (temps joué par les possesseurs) et IGDB (temps pour finir, déclaré par les joueurs). Tes références restent dans ton navigateur.</footer>
+
+<script>
+/* Méthodes comparées. Toutes en minutes ; null si on ne sait pas. */
+const METHODS = [
+  { k: 'median', label: 'Médiane SteamSpy', hint: 'méthode actuelle', f: (d) => d.spy?.median || null },
+  { k: 'average', label: 'Moyenne SteamSpy', hint: 'tirée par les gros joueurs', f: (d) => d.spy?.average || null },
+  { k: 'mixA', label: 'Ajustement A', hint: '√(médiane × moyenne)', f: (d) => mix(d, 0.5) },
+  { k: 'mixB', label: 'Ajustement B', hint: 'plus proche de la moyenne', f: (d) => mix(d, 0.75) },
+  { k: 'igdbH', label: 'IGDB rapide', hint: 'histoire en ligne droite', f: (d) => d.igdb?.hastily || null },
+  { k: 'igdbN', label: 'IGDB normal', hint: 'histoire + un peu de côté', f: (d) => d.igdb?.normally || null },
+  { k: 'igdbC', label: 'IGDB complet', hint: '100 %', f: (d) => d.igdb?.completely || null },
+];
+// Corrige la médiane quand la moyenne est bien plus haute (beaucoup d'abandons) : médiane × (moyenne / médiane)^p.
+function mix(d, p) {
+  const m = d.spy?.median, a = d.spy?.average;
+  if (!m) return null;
+  if (!a || a <= m) return m;
+  return Math.round(m * (a / m) ** p);
+}
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+function fmtH(min) { if (min == null) return '–'; const h = min / 60; return h < 10 ? h.toFixed(1).replace('.', ',') + ' h' : Math.round(h) + ' h'; }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const S = {
+  input: store('pos.last') || '', profile: null, error: null, loading: false,
+  rows: [], data: {}, refs: store('pos.ref') || {}, q: '',
+};
+
+async function loadProfile(u) {
+  S.loading = true; S.error = null; render();
+  try {
+    const r = await fetch('/api/profile?u=' + encodeURIComponent(u));
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { S.error = d.message || 'Impossible de charger ce profil.'; return; }
+    S.profile = d; S.input = u;
+    // Par défaut : tes 20 jeux les plus joués (ceux dont tu connais le plus sûrement la durée) et ceux qui ont déjà une référence.
+    const top = [...d.games].sort((a, b) => b.playtime - a.playtime).slice(0, 20);
+    const withRef = d.games.filter((g) => S.refs[g.appid] != null);
+    S.rows = [...new Map([...withRef, ...top].map((g) => [g.appid, g])).values()];
+    fetchAll();
+  } catch (e) {
+    S.error = 'Connexion impossible. Vérifie ta connexion internet et réessaie.';
+  } finally { S.loading = false; render(); }
+}
+
+let run = 0;
+async function fetchAll() {
+  const me = ++run;
+  for (const g of S.rows) {
+    if (me !== run) return;
+    if (S.data[g.appid]) continue;
+    await fetchOne(g.appid);
+    await sleep(1100); // SteamSpy : une requête par seconde
+  }
+}
+async function fetchOne(id) {
+  S.data[id] = { loading: true }; renderTable();
+  try {
+    const r = await fetch('/api/durations?appid=' + id);
+    S.data[id] = r.ok ? await r.json() : { failed: true };
+  } catch (e) { S.data[id] = { failed: true }; }
+  renderTable(); renderScores();
+}
+
+/* Erreur typique d'une méthode : moyenne de |log(estimation / référence)|, affichée en %. */
+function scores() {
+  return METHODS.map((m) => {
+    const errs = [];
+    for (const g of S.rows) {
+      const ref = S.refs[g.appid]; const d = S.data[g.appid];
+      if (ref == null || !d || d.loading || d.failed) continue;
+      const v = m.f(d);
+      if (v) errs.push(Math.abs(Math.log(v / (ref * 60))));
+    }
+    const mean = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : null;
+    const under = []; // tendance : sous- ou surestime
+    for (const g of S.rows) { const ref = S.refs[g.appid], d = S.data[g.appid]; if (ref != null && d && !d.loading && !d.failed) { const v = m.f(d); if (v) under.push(Math.log(v / (ref * 60))); } }
+    const bias = under.length ? under.reduce((a, b) => a + b, 0) / under.length : 0;
+    return { ...m, n: errs.length, err: mean == null ? null : Math.exp(mean) - 1, bias };
+  });
+}
+
+function render() {
+  const app = $('#app');
+  app.innerHTML = `
+    <section>
+      <h1>Labo des durées</h1>
+      <p class="lead">Quelle source estime le mieux le temps qu'il faut pour finir un jeu ? Note la vraie durée des jeux que tu connais (ou celle de HowLongToBeat) dans la colonne <b>Référence</b>. Le labo calcule l'écart de chaque méthode et désigne la plus fiable.</p>
+    </section>
+    <section class="panel">
+      <form class="row" id="go">
+        <input id="u" type="text" inputmode="url" autocomplete="off" placeholder="https://steamcommunity.com/id/tonpseudo" value="${esc(S.input)}" aria-label="Adresse de ton profil Steam">
+        <button class="btn pri" ${S.loading ? 'disabled' : ''}>${S.loading ? 'Chargement…' : S.profile ? 'Recharger' : 'Charger mes jeux'}</button>
+      </form>
+      ${S.error ? `<p class="err" style="margin:10px 0 0">${esc(S.error)}</p>` : ''}
+    </section>
+    ${S.profile ? `
+    <section class="panel">
+      <h2>Qui se trompe le moins ?</h2>
+      <p class="sub">Écart typique entre la méthode et tes références : 0 % = parfait. Il faut au moins 5 références pour que ça veuille dire quelque chose.</p>
+      <div id="scores"></div>
+    </section>
+    <section>
+      <div id="igdbnote"></div>
+      <div class="tbl"><table><thead><tr><th>Jeu</th><th>Ton temps</th>${METHODS.map((m) => `<th title="${esc(m.hint)}">${esc(m.label)}</th>`).join('')}<th>Référence (h)</th></tr></thead><tbody id="tbody"></tbody></table></div>
+    </section>
+    <section class="panel">
+      <h2>Ajouter des jeux</h2>
+      <input id="q" type="search" placeholder="Chercher un jeu de ta bibliothèque…" value="${esc(S.q)}" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px">
+      <div class="add" id="add"></div>
+    </section>` : ''}`;
+  $('#go').addEventListener('submit', (e) => { e.preventDefault(); const v = $('#u').value.trim(); if (v) loadProfile(v); });
+  if (S.profile) {
+    $('#q').addEventListener('input', (e) => { S.q = e.target.value.trim().toLowerCase(); renderAdd(); });
+    renderTable(); renderScores(); renderAdd();
+  }
+}
+
+function renderTable() {
+  const tb = $('#tbody'); if (!tb) return;
+  const keep = document.activeElement?.dataset?.ref;
+  tb.innerHTML = S.rows.map((g) => {
+    const d = S.data[g.appid]; const ref = S.refs[g.appid];
+    const cells = METHODS.map((m) => {
+      if (!d || d.loading) return '<td class="na">…</td>';
+      if (d.failed) return '<td class="na">erreur</td>';
+      const v = m.f(d);
+      if (!v) return '<td class="na">–</td>';
+      let cls = '';
+      if (ref) { const e = Math.abs(Math.log(v / (ref * 60))); cls = e < 0.25 ? 'close' : e > 0.7 ? 'far' : ''; }
+      return `<td class="${cls}">${fmtH(v)}</td>`;
+    }).join('');
+    return `<tr><td>${esc(g.name)}<small><a href="https://howlongtobeat.com/?q=${encodeURIComponent(g.name)}" target="_blank" rel="noopener">HowLongToBeat</a></small></td>
+      <td>${fmtH(g.playtime)}</td>${cells}
+      <td><input type="number" min="0" step="0.5" inputmode="decimal" data-ref="${g.appid}" value="${ref ?? ''}" aria-label="Durée de référence pour ${esc(g.name)}, en heures"></td></tr>`;
+  }).join('');
+  if (keep) { const i = tb.querySelector(`[data-ref="${keep}"]`); if (i) { i.focus(); const v = i.value; i.value = ''; i.value = v; } }
+  const igdb = Object.values(S.data).find((d) => d.igdb)?.igdb;
+  const note = $('#igdbnote');
+  if (note) note.innerHTML = igdb?.status === 'not_configured'
+    ? '<p class="note">Les colonnes IGDB sont vides : le serveur n\'a pas encore d\'identifiants Twitch (TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET).</p>'
+    : igdb?.status === 'error' ? `<p class="note">IGDB a répondu par une erreur : ${esc(igdb.message)}</p>` : '';
+}
+
+function renderScores() {
+  const el = $('#scores'); if (!el) return;
+  const list = scores().filter((s) => s.n);
+  if (!list.length) { el.innerHTML = '<p class="sub" style="margin:0">Remplis la colonne Référence pour voir apparaître le classement.</p>'; return; }
+  const best = Math.min(...list.filter((s) => s.n >= 3).map((s) => s.err));
+  el.innerHTML = `<div class="scores">${list.sort((a, b) => a.err - b.err).map((s) => `<div class="score ${s.err === best ? 'best' : ''}">
+    <b>± ${Math.round(s.err * 100)} %</b><span>${esc(s.label)} · ${s.n} jeu${s.n > 1 ? 'x' : ''}<br>${Math.abs(s.bias) < 0.1 ? 'ni trop court ni trop long' : s.bias < 0 ? `sous-estime (≈ ${Math.round((1 - Math.exp(s.bias)) * 100)} % trop court)` : `surestime (≈ ${Math.round((Math.exp(s.bias) - 1) * 100)} % trop long)`}</span></div>`).join('')}</div>`;
+}
+
+function renderAdd() {
+  const el = $('#add'); if (!el) return;
+  if (!S.q) { el.innerHTML = ''; return; }
+  const inRows = new Set(S.rows.map((g) => g.appid));
+  const hits = S.profile.games.filter((g) => !inRows.has(g.appid) && g.name.toLowerCase().includes(S.q)).slice(0, 12);
+  el.innerHTML = hits.length ? hits.map((g) => `<button class="chip" data-add="${g.appid}">+ ${esc(g.name)}</button>`).join('') : '<span class="sub" style="margin:0">Aucun jeu trouvé.</span>';
+}
+
+document.addEventListener('input', (e) => {
+  const id = e.target.dataset?.ref; if (!id) return;
+  const v = parseFloat(String(e.target.value).replace(',', '.'));
+  if (v > 0) S.refs[id] = v; else delete S.refs[id];
+  store('pos.ref', S.refs); renderScores();
+  clearTimeout(renderTable.t); renderTable.t = setTimeout(renderTable, 600);
+});
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-add]'); if (!b) return;
+  const g = S.profile.games.find((x) => x.appid === +b.dataset.add);
+  if (g) { S.rows.unshift(g); S.q = ''; $('#q').value = ''; renderAdd(); renderTable(); fetchAll(); }
+});
+
+render();
+if (S.input) loadProfile(S.input);
+</script>
+</body>
+</html>

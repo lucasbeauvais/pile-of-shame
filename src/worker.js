@@ -6,6 +6,7 @@ const META_TTL = 60 * 60 * 24 * 30; // 30 jours de cache pour les infos d'un jeu
 const MAX_IDS = 10;                  // jeux par appel à /api/meta
 const SPY_DELAY = 1000;              // SteamSpy demande 1 requête par seconde
 const LIVE_TTL = 60 * 30;            // 30 min de cache pour les joueurs connectés et le top Steam
+const IGDB_TTL = 60 * 60 * 24 * 7;   // 7 jours de cache pour les durées IGDB
 const MAX_LIVE_IDS = 15;             // jeux par appel à /api/players (limite de sous-requêtes d'un Worker)
 
 const CORS = { 'access-control-allow-origin': '*' };
@@ -199,6 +200,71 @@ async function charts(env, ctx) {
   return json({ ranks }, 200, { 'cache-control': `public, max-age=${LIVE_TTL}` });
 }
 
+// --- IGDB (Twitch) : durées « time to beat ». Optionnel : secrets TWITCH_CLIENT_ID et TWITCH_CLIENT_SECRET. ---
+async function igdbToken(env, ctx) {
+  const req = new Request('https://pileofshame.cache/igdb-token/v1');
+  const hit = await caches.default.match(req);
+  if (hit) return (await hit.json()).token;
+  const r = await fetch(`https://id.twitch.tv/oauth2/token?client_id=${encodeURIComponent(env.TWITCH_CLIENT_ID)}&client_secret=${encodeURIComponent(env.TWITCH_CLIENT_SECRET)}&grant_type=client_credentials`, { method: 'POST' });
+  if (!r.ok) throw new Error('twitch ' + r.status);
+  const d = await r.json();
+  const ttl = Math.max(60, (Number(d.expires_in) || 3600) - 3600);
+  ctx.waitUntil(caches.default.put(req, new Response(JSON.stringify({ token: d.access_token }), {
+    headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${ttl}` },
+  })));
+  return d.access_token;
+}
+
+async function igdbQuery(env, token, endpoint, body) {
+  const r = await fetch(`https://api.igdb.com/v4/${endpoint}`, {
+    method: 'POST',
+    headers: { 'client-id': env.TWITCH_CLIENT_ID, authorization: `Bearer ${token}`, 'content-type': 'text/plain' },
+    body,
+  });
+  if (!r.ok) throw new Error(`igdb ${endpoint} ${r.status}`);
+  return r.json();
+}
+
+// Réduit une ligne game_time_to_beats d'IGDB (secondes) en minutes.
+export function normalizeTtb(row) {
+  if (!row) return null;
+  const min = (v) => (Number(v) > 0 ? Math.round(Number(v) / 60) : 0);
+  return { hastily: min(row.hastily), normally: min(row.normally), completely: min(row.completely), count: Number(row.count) || 0 };
+}
+
+async function igdbDuration(appid, env, ctx) {
+  if (!env.TWITCH_CLIENT_ID || !env.TWITCH_CLIENT_SECRET) return { status: 'not_configured' };
+  return cached(`igdb/v1/${appid}`, IGDB_TTL, ctx, async () => {
+    const token = await igdbToken(env, ctx);
+    // La source « Steam » vaut 1. IGDB a renommé le champ category en external_game_source : on essaie les deux.
+    let ext = [];
+    for (const field of ['external_game_source', 'category']) {
+      try {
+        ext = await igdbQuery(env, token, 'external_games', `fields game,uid; where uid = "${appid}" & ${field} = 1; limit 1;`);
+        if (ext.length) break;
+      } catch (e) { /* champ inconnu : on tente l'autre */ }
+    }
+    const game = ext[0]?.game;
+    if (!game) return { status: 'unknown_game' };
+    const ttb = await igdbQuery(env, token, 'game_time_to_beats', `fields game_id,hastily,normally,completely,count; where game_id = ${Number(game)}; limit 1;`);
+    const t = normalizeTtb(ttb[0]);
+    return t ? { status: 'ok', game, ...t } : { status: 'no_data', game };
+  });
+}
+
+// Labo des durées : toutes les sources pour un jeu, pour comparer les méthodes.
+async function durations(url, env, ctx) {
+  const appid = Number(url.searchParams.get('appid'));
+  if (!Number.isInteger(appid) || appid <= 0) return json({ error: 'bad_input', message: 'Paramètre appid manquant.' }, 400);
+  const [spy, igdb] = await Promise.all([
+    cached(`meta/v1/${appid}`, META_TTL, ctx, async () => {
+      try { return normalizeSpy(await getJSON(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`)); } catch (e) { return null; }
+    }),
+    igdbDuration(appid, env, ctx).catch((e) => ({ status: 'error', message: String(e.message || e) })),
+  ]);
+  return json({ appid, spy: spy ? { median: spy.median, average: spy.average } : null, igdb });
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -210,6 +276,7 @@ export default {
       if (url.pathname === '/api/meta') return await meta(url, ctx);
       if (url.pathname === '/api/players') return await players(url, ctx);
       if (url.pathname === '/api/charts') return await charts(env, ctx);
+      if (url.pathname === '/api/durations') return await durations(url, env, ctx);
     } catch (e) {
       return json({ error: 'upstream', message: 'Steam ne répond pas pour le moment. Réessaie dans une minute.' }, 502);
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseProfile, normalizeSpy, normalizeCharts } from '../src/worker.js';
+import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb } from '../src/worker.js';
 
 test('parseProfile reconnaît les formats courants', () => {
   assert.deepEqual(parseProfile('https://steamcommunity.com/profiles/76561197960287930/'), { steamid: '76561197960287930' });
@@ -132,4 +132,30 @@ test('charts : top Steam normalisé, 502 si Steam ne répond pas', async () => {
   ({ ctx } = setup([]));
   const r2 = await worker.fetch(new Request('https://x.dev/api/charts'), env, ctx);
   assert.equal(r2.status, 502);
+});
+
+test('normalizeTtb convertit les secondes IGDB en minutes', () => {
+  assert.deepEqual(normalizeTtb({ hastily: 36000, normally: 72000, completely: 0, count: 12 }), { hastily: 600, normally: 1200, completely: 0, count: 12 });
+  assert.equal(normalizeTtb(undefined), null);
+});
+
+test('durations : SteamSpy seul quand IGDB n\'est pas configuré', async () => {
+  const { ctx } = setup([['steamspy.com', { appid: 10, median_forever: 300, average_forever: 900 }]]);
+  const r = await worker.fetch(new Request('https://x.dev/api/durations?appid=10'), env, ctx);
+  const d = await r.json();
+  assert.deepEqual(d.spy, { median: 300, average: 900 });
+  assert.equal(d.igdb.status, 'not_configured');
+});
+
+test('durations : IGDB via la correspondance Steam', async () => {
+  const { calls, ctx } = setup([
+    ['steamspy.com', { appid: 10, median_forever: 300, average_forever: 900 }],
+    ['oauth2/token', { access_token: 'T', expires_in: 5000000 }],
+    ['v4/external_games', [{ id: 1, game: 77, uid: '10' }]],
+    ['v4/game_time_to_beats', [{ game_id: 77, hastily: 18000, normally: 36000, completely: 72000, count: 40 }]],
+  ]);
+  const r = await worker.fetch(new Request('https://x.dev/api/durations?appid=10'), { ...env, TWITCH_CLIENT_ID: 'id', TWITCH_CLIENT_SECRET: 's' }, ctx);
+  const d = await r.json();
+  assert.deepEqual(d.igdb, { status: 'ok', game: 77, hastily: 300, normally: 600, completely: 1200, count: 40 });
+  assert.ok(!calls.some((c) => c.includes('TESTKEY') && c.includes('igdb')));
 });

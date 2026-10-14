@@ -15,6 +15,7 @@ Un seul **Cloudflare Worker** sert à la fois la page statique et l'API.
 
 ```
 public/index.html   page unique (HTML + CSS + JS vanilla, aucune dépendance)
+public/durees.html  labo des durées : compare les méthodes d'estimation aux durées de référence saisies
 src/worker.js       relais API, la clé Steam reste côté serveur
 wrangler.jsonc      config Worker + static assets (binding ASSETS)
 test/worker.test.js tests node:test du relais (npm test)
@@ -35,9 +36,14 @@ test/worker.test.js tests node:test du relais (npm test)
   - `ISteamUserStats/GetNumberOfCurrentPlayers` par jeu, renvoie `{players:{appid:nombre|null}}`. Cache 30 min.
 - `GET /api/charts`
   - `ISteamChartsService/GetMostPlayedGames` : top 100 Steam, renvoie `{ranks:[{appid, rank, lastWeekRank, peak}]}`. `lastWeekRank` = 0 pour une nouvelle entrée. Cache 30 min.
+- `GET /api/durations?appid=X` (labo des durées)
+  - Renvoie `{appid, spy:{median, average}|null, igdb:{status, hastily, normally, completely, count}}` (minutes).
+  - `igdb.status` : `ok` · `not_configured` (secrets Twitch absents) · `unknown_game` (pas de correspondance Steam) · `no_data` · `error`.
+  - IGDB : jeton Twitch `client_credentials` mis en cache, correspondance via `external_games` (source Steam = 1, champ `external_game_source` puis `category` en repli), puis `game_time_to_beats`. Cache 7 jours.
 
 ### Secret
 `STEAM_API_KEY`, à définir via `wrangler secret put STEAM_API_KEY` ou dans le dashboard Cloudflare.
+Optionnels, pour IGDB : `TWITCH_CLIENT_ID` et `TWITCH_CLIENT_SECRET` (application créée sur https://dev.twitch.tv/console/apps).
 ⚠️ Ne jamais la committer. Pour le développement local, la mettre dans `.dev.vars` (déjà dans `.gitignore`).
 ⚠️ L'ancienne clé de Lucas a été exposée dans une conversation : **la révoquer et en générer une nouvelle** sur https://steamcommunity.com/dev/apikey.
 
@@ -68,6 +74,7 @@ test/worker.test.js tests node:test du relais (npm test)
 ## État actuel
 - ✅ Code complet. Les tests du relais passent (`npm test`, 11 tests).
 - ✅ Déployé sur https://pile-of-shame.lucasbeauvais.workers.dev (Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
+- 🧪 Labo des durées (`/durees.html`) : 7 méthodes (médiane, moyenne, ajustements `médiane × (moyenne/médiane)^p` avec p = 0,5 et 0,75, IGDB rapide / normal / complet), classées par écart typique `exp(moy |log(estimation/référence)|) − 1` sur les références saisies (`pos.ref` dans le localStorage). Le gagnant n'est pas encore branché dans les recos.
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.
 
