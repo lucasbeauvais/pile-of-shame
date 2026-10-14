@@ -15,6 +15,7 @@ Un seul **Cloudflare Worker** sert à la fois la page statique et l'API.
 
 ```
 public/index.html   page unique (HTML + CSS + JS vanilla, aucune dépendance)
+public/robots.txt   tout autorisé, y compris GPTBot, ClaudeBot, PerplexityBot, Google-Extended
 src/worker.js       relais API, la clé Steam reste côté serveur
 wrangler.jsonc      config Worker + static assets (binding ASSETS)
 test/worker.test.js tests node:test du relais (npm test)
@@ -103,6 +104,14 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
    - **Rate limiting par IP** sur `/api/meta`, pour ménager SteamSpy.
    - **Repli quand SteamSpy est indisponible** : Steam Store `appdetails` pour les genres et catégories (single-player / co-op).
    - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.
+
+## SEO / GEO
+- L'appli (`<main id="app">`) est rendue en JS : les crawlers ne la voient pas. Ce qui est lisible sans JS est donc écrit **en dur** dans `public/index.html` :
+  - bloc `#about` sous l'appli (« C'est quoi, la pile de la honte ? », « Comment ça marche », « Qui est derrière ») ;
+  - footer : bouton affilié Humble « Nourrir la pile » + « lien affilié », ligne « Un projet perso de Lucas Beauvais Cochereau · LinkedIn », ligne des sources de données.
+  - Ces blocs portent `data-i18n="clé"` : en français dans le HTML d'origine, `applyLang()` les traduit quand la page passe en anglais. Modifier le texte = modifier le HTML **et** les clés `fr` / `en`.
+- `<head>` : canonical, Open Graph (pas d'`og:image`, aucune image dans le projet), `meta author`, JSON-LD `@graph` = `WebApplication` (auteur → `#lucas`) + `Person` (`#lucas`, `sameAs` LinkedIn).
+- Placeholders à remplacer : `LINKEDIN_URL` (JSON-LD, footer, clés `foot.by`) et `HUMBLE_AFFILIATE_URL` (footer). `SITE_URL` = l'URL workers.dev en attendant le domaine perso (canonical, `og:url`, JSON-LD).
 
 ## Langue
 - Dictionnaire `I18N = {fr, en}` en tête du script, fonction `t(clé, {variables})`. Tout texte affiché passe par `t()`, y compris les messages d'erreur du serveur, traduits côté page à partir de leur code (`err.<error>`).
