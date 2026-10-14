@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb, siteFromStore } from '../src/worker.js';
+import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb, siteFromStore, normalizeStoreItem } from '../src/worker.js';
 
 test('parseProfile reconnaît les formats courants', () => {
   assert.deepEqual(parseProfile('https://steamcommunity.com/profiles/76561197960287930/'), { steamid: '76561197960287930' });
@@ -73,15 +73,39 @@ test('pseudo inconnu → 404', async () => {
   assert.equal(r.status, 404);
 });
 
-test('meta : cache utilisé au second appel', async () => {
-  const { calls, ctx, flush } = setup([['steamspy.com', { appid: 10, tags: { Puzzle: 5 }, median_forever: 120, positive: 1, negative: 0 }]]);
-  const r1 = await worker.fetch(new Request('https://x.dev/api/meta?ids=10'), env, ctx);
-  assert.deepEqual((await r1.json()).meta['10'].tags, ['Puzzle']);
-  await flush();
-  const before = calls.length;
-  const r2 = await worker.fetch(new Request('https://x.dev/api/meta?ids=10'), env, ctx);
-  assert.equal((await r2.json()).meta['10'].median, 120);
-  assert.equal(calls.length, before);
+test('normalizeStoreItem : tags par poids, avis convertis', () => {
+  const names = { 1: 'RPG', 2: 'Co-op', 3: 'Indie' };
+  const m = normalizeStoreItem({ appid: 10, success: 1, tags: [{ tagid: 3, weight: 10 }, { tagid: 1, weight: 90 }, { tagid: 2, weight: 50 }, { tagid: 99, weight: 5 }], reviews: { summary_filtered: { review_count: 200, percent_positive: 90 } } }, names);
+  assert.deepEqual(m, { tags: ['RPG', 'Co-op', 'Indie'], median: 0, average: 0, pos: 180, neg: 20, ccu: 0 });
+  assert.deepEqual(normalizeStoreItem({ appid: 11, tagids: [2, 1] }, names).tags, ['Co-op', 'RPG']);
+  assert.equal(normalizeStoreItem({ appid: 12, success: 2 }, names), null);
+  assert.equal(normalizeStoreItem({ appid: 13 }, names), null);
+});
+
+test('meta : tout le lot en une requête Steam, SteamSpy pour les absents', async () => {
+  const { calls, ctx } = setup([
+    ['GetTagList', { response: { tags: [{ tagid: 1, name: 'Puzzle' }] } }],
+    ['GetItems', { response: { store_items: [{ appid: 10, success: 1, tags: [{ tagid: 1, weight: 1 }], reviews: { summary_filtered: { review_count: 10, percent_positive: 100 } } }] } }],
+    ['steamspy.com', { appid: 20, tags: { Racing: 5 }, median_forever: 120, positive: 1, negative: 0 }],
+  ]);
+  const r = await worker.fetch(new Request('https://x.dev/api/meta?ids=10,20'), env, ctx);
+  const d = (await r.json()).meta;
+  assert.deepEqual(d['10'].tags, ['Puzzle']);
+  assert.equal(d['10'].pos, 10);
+  assert.deepEqual(d['20'].tags, ['Racing']);
+  assert.equal(calls.filter((c) => c.includes('GetItems')).length, 1);
+  assert.equal(calls.filter((c) => c.includes('steamspy')).length, 1);
+  const input = JSON.parse(decodeURIComponent(calls.find((c) => c.includes('GetItems')).split('input_json=')[1]));
+  assert.deepEqual(input.ids, [{ appid: 10 }, { appid: 20 }]);
+});
+
+test('meta : Steam en panne → SteamSpy pour 3 jeux au plus', async () => {
+  const { calls, ctx } = setup([['steamspy.com', { appid: 1, tags: { RPG: 1 } }]]);
+  const r = await worker.fetch(new Request('https://x.dev/api/meta?ids=1,2,3,4,5'), env, ctx);
+  const d = (await r.json()).meta;
+  assert.equal(Object.keys(d).length, 5);
+  assert.equal(calls.filter((c) => c.includes('steamspy')).length, 3);
+  assert.equal(d['5'], null);
 });
 
 test('clé absente → 500 explicite', async () => {

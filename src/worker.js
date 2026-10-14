@@ -3,7 +3,8 @@
 
 const STEAM = 'https://api.steampowered.com';
 const META_TTL = 60 * 60 * 24 * 30; // 30 jours de cache pour les infos d'un jeu
-const MAX_IDS = 10;                  // jeux par appel à /api/meta
+const MAX_IDS = 50;                  // jeux par appel à /api/meta (une seule requête Steam pour tout le lot)
+const SPY_FALLBACK = 3;              // jeux absents de Steam demandés à SteamSpy, par appel (1 par seconde)
 const SPY_DELAY = 1000;              // SteamSpy demande 1 requête par seconde
 const LIVE_TTL = 60 * 30;            // 30 min de cache pour les joueurs connectés et le top Steam
 const MAX_TTB_IDS = 50;              // jeux par appel à /api/ttb (2 requêtes IGDB quel que soit le nombre)
@@ -143,32 +144,64 @@ async function profile(url, env) {
   }, 200, { 'cache-control': 'public, max-age=300' });
 }
 
-async function meta(url, ctx) {
+// Noms des tags Steam (tagid → nom anglais, les mêmes que ceux de SteamSpy). Cache 7 jours.
+async function tagNames(env, ctx) {
+  return cached('tagnames/v1', 60 * 60 * 24 * 7, ctx, async () => {
+    const d = await getJSON(`${STEAM}/IStoreService/GetTagList/v1/?key=${env.STEAM_API_KEY}&language=english`);
+    const out = {};
+    for (const t of d?.response?.tags || []) if (t.tagid && t.name) out[t.tagid] = t.name;
+    return Object.keys(out).length ? out : null;
+  });
+}
+
+// Réduit une fiche IStoreBrowseService/GetItems au même format que SteamSpy (tags triés, avis).
+export function normalizeStoreItem(item, names) {
+  if (!item || (item.success != null && item.success !== 1 && item.success !== true)) return null;
+  let tags = Array.isArray(item.tags)
+    ? [...item.tags].sort((a, b) => (b.weight || 0) - (a.weight || 0)).map((t) => names[t.tagid])
+    : (item.tagids || []).map((id) => names[id]);
+  tags = tags.filter(Boolean).slice(0, 15);
+  const rv = item.reviews?.summary_filtered || item.reviews?.summary_unfiltered;
+  const count = Number(rv?.review_count) || 0;
+  const pos = Math.round(count * (Number(rv?.percent_positive) || 0) / 100);
+  if (!tags.length && !count) return null;
+  return { tags, median: 0, average: 0, pos, neg: count - pos, ccu: 0 };
+}
+
+// Genres et avis de tout un lot en une requête Steam.
+async function storeItems(ids, env, ctx) {
+  const names = await tagNames(env, ctx);
+  if (!names) throw new Error('tag list');
+  const input = {
+    ids: ids.map((appid) => ({ appid })),
+    context: { language: 'english', country_code: 'US', steam_realm: 1 },
+    data_request: { include_tag_count: 20, include_reviews: true },
+  };
+  const d = await getJSON(`${STEAM}/IStoreBrowseService/GetItems/v1/?key=${env.STEAM_API_KEY}&input_json=${encodeURIComponent(JSON.stringify(input))}`);
+  const out = {};
+  for (const item of d?.response?.store_items || []) {
+    const id = Number(item.appid ?? item.id);
+    if (ids.includes(id)) out[id] = normalizeStoreItem(item, names);
+  }
+  return out;
+}
+
+// GET /api/meta : Steam d'abord (tout le lot d'un coup), SteamSpy en secours pour quelques jeux absents.
+// Pas de cache par jeu côté Worker : c'est le navigateur qui garde les résultats (pos.meta).
+async function meta(url, env, ctx) {
   const ids = parseIds(url, MAX_IDS);
   if (!ids.length) return json({ error: 'bad_input', message: 'Paramètre ids manquant.' }, 400);
-
-  const cache = caches.default;
-  const out = {};
-  let upstreamCalls = 0;
-
+  let out = {};
+  if (env.STEAM_API_KEY) {
+    try { out = await storeItems(ids, env, ctx); } catch (e) { out = {}; }
+  }
+  let spyCalls = 0;
   for (const id of ids) {
-    const cacheKey = new Request(`https://pileofshame.cache/meta/v1/${id}`);
-    const hit = await cache.match(cacheKey);
-    if (hit) { out[id] = await hit.json(); continue; }
-
-    if (upstreamCalls++) await sleep(SPY_DELAY);
-    let m = null;
-    try {
-      m = normalizeSpy(await getJSON(`https://steamspy.com/api.php?request=appdetails&appid=${id}`));
-    } catch (e) {
-      m = null; // SteamSpy indisponible : la page affichera « durée inconnue »
-    }
-    out[id] = m;
-    if (m) {
-      ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(m), {
-        headers: { 'content-type': 'application/json', 'cache-control': `public, max-age=${META_TTL}` },
-      })));
-    }
+    if (out[id]) continue;
+    out[id] = null;
+    if (spyCalls >= SPY_FALLBACK) continue;
+    if (spyCalls++) await sleep(SPY_DELAY);
+    try { out[id] = normalizeSpy(await getJSON(`https://steamspy.com/api.php?request=appdetails&appid=${id}`)); } catch (e) { /* inconnu */ }
   }
   return json({ meta: out });
 }
@@ -294,7 +327,7 @@ export default {
     }
     try {
       if (url.pathname === '/api/profile') return await profile(url, env);
-      if (url.pathname === '/api/meta') return await meta(url, ctx);
+      if (url.pathname === '/api/meta') return await meta(url, env, ctx);
       if (url.pathname === '/api/players') return await players(url, ctx);
       if (url.pathname === '/api/charts') return await charts(env, ctx);
       if (url.pathname === '/api/ttb') return await ttb(url, env, ctx);

@@ -25,12 +25,12 @@ test/worker.test.js tests node:test du relais (npm test)
   - Résout le pseudo (`ResolveVanityURL`), puis appelle `GetOwnedGames` et `GetPlayerSummaries`.
   - Renvoie `{steamid, persona, avatar, games:[{appid,name,playtime(min),lastPlayed}]}`.
   - Erreurs : 400 entrée non reconnue · 404 pseudo inconnu · 403 bibliothèque privée · 500 clé absente · 502 Steam indisponible.
-- `GET /api/meta?ids=1,2,…` (10 maximum)
-  - Interroge SteamSpy `appdetails` et renvoie `{meta:{appid:{tags[], median, average, pos, neg, ccu}|null}}`.
-  - `median` et `average` sont en minutes de temps joué par les possesseurs.
-  - Résultats mis en cache 30 jours via `caches.default`.
-  - Requêtes SteamSpy espacées d'1 seconde, comme l'exige leur limite de débit.
-  - `ccu` : pic de joueurs simultanés la veille de l'analyse, utilisé comme « niveau habituel » pour détecter un pic.
+- `GET /api/meta?ids=1,2,…` (50 maximum)
+  - Renvoie `{meta:{appid:{tags[], median, average, pos, neg, ccu}|null}}`.
+  - Source principale : `IStoreBrowseService/GetItems` (tout le lot en **une** requête, `include_tag_count: 20`, `include_reviews`), noms des tags via `IStoreService/GetTagList` (cache 7 jours). Avis = `review_count` × `percent_positive`. `median`, `average` et `ccu` valent 0 pour ces jeux.
+  - Secours SteamSpy `appdetails` pour les jeux absents de Steam : 3 au plus par appel (`SPY_FALLBACK`), espacés d'1 seconde. Là, `median`/`average` sont en minutes de temps joué par les possesseurs et `ccu` est le pic de joueurs simultanés de la veille.
+  - Pourquoi : SteamSpy seul (1 requête/s) demandait ~25 min pour une bibliothèque de 1 500 jeux ; c'est maintenant une trentaine de requêtes.
+  - Pas de cache par jeu côté Worker : le navigateur garde les résultats (`pos.meta`).
 - `GET /api/players?ids=1,2,…` (15 maximum, limite de sous-requêtes d'un Worker)
   - `ISteamUserStats/GetNumberOfCurrentPlayers` par jeu, renvoie `{players:{appid:nombre|null}}`. Cache 30 min.
 - `GET /api/charts`
@@ -74,7 +74,7 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - **Toute ta pile** : vues recos / toute la bibliothèque / jamais lancés / finis / écartés / en cours ; tris pertinence / duels / plus courts / temps de jeu / nom. Les jeux finis, écartés ou en cours peuvent être démarqués.
 - Plus de bouton « C'est parti » (retiré à la demande de Lucas) ; le statut « en cours » ne reste que pour les jeux déjà marqués.
 - **Liens d'un jeu** (`linksHTML`) : Lancer dans Steam, Voir la page du jeu (`/api/site`), Page Steam, plus HowLongToBeat (recos) ou la courbe de joueurs (tendances).
-- **Ordre d'analyse** : les 15 jeux les plus joués d'abord (pour l'affinité), puis la pile, puis les 25 suivants. Les recos se mettent à jour à chaque lot de 10.
+- **Ordre d'analyse** : les 15 jeux les plus joués d'abord (pour l'affinité), puis la pile, puis les 25 suivants. Les recos se mettent à jour à chaque lot de 50.
 - **État utilisateur** dans le localStorage :
   - `pos.u.<steamid>` : statuts, préférences, filtres, notes des duels ;
   - `pos.meta` : cache des métadonnées SteamSpy ;
@@ -83,8 +83,9 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - **Lien partageable** : `?u=<profil>` charge directement un profil.
 
 ## État actuel
-- ✅ Code complet. Les tests du relais passent (`npm test`, 16 tests).
+- ✅ Code complet. Les tests du relais passent (`npm test`, 18 tests).
 - ✅ Déployé sur https://pile-of-shame.lucasbeauvais.workers.dev (Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
+- 🆕 `/api/meta` via `IStoreBrowseService/GetItems` : forme de la réponse écrite de mémoire, vérifiée seulement avec des données simulées. Si Steam ne répond pas comme prévu, tout retombe sur SteamSpy (lent).
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
 - ✅ Moteur de reco vérifié sur des données d'exemple.
 

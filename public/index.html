@@ -340,9 +340,11 @@ async function enrich() {
   renderProgress();
   loadChart();
   loadTtb(run);
-  for (let i = 0; i < queue.length; i += 10) {
+  // Lots de 50 : le serveur demande tout le lot à Steam en une requête. Le premier lot (15 jeux les plus joués + début de la pile)
+  // suffit à afficher de premières recos.
+  for (let i = 0; i < queue.length; i += 50) {
     if (run !== enrichRun) return;
-    const ids = queue.slice(i, i + 10);
+    const ids = queue.slice(i, i + 50);
     try {
       const r = await fetch('/api/meta?ids=' + ids.join(','));
       if (!r.ok) throw new Error();
