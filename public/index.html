@@ -18,7 +18,7 @@ header{border-bottom:1px solid var(--line)}
 .top{display:flex;align-items:center;gap:14px;padding-block:14px;flex-wrap:wrap}
 .logo{font-weight:800;font-size:20px;letter-spacing:-.02em}
 .logo span{color:var(--acc2)}
-.who{display:flex;align-items:center;gap:10px;margin-left:auto;color:var(--mute);font-size:14px}
+.who{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end;color:var(--mute);font-size:14px}
 .who img{width:32px;height:32px;border-radius:6px}
 main{padding-block:24px 70px;display:flex;flex-direction:column;gap:22px}
 
@@ -55,7 +55,7 @@ form.go input:focus{border-color:var(--acc)}
 .stat.shame b{color:var(--acc2)}
 button.stat{text-align:left;cursor:pointer;color:inherit;font:inherit}
 button.stat:hover{border-color:var(--acc)}
-button.stat::after{content:"Voir →";display:block;font-size:11px;color:var(--acc);margin-top:2px}
+button.stat::after{content:attr(data-see);display:block;font-size:11px;color:var(--acc);margin-top:2px}
 .links{font-size:12px;display:flex;flex-wrap:wrap;gap:4px 10px}
 .duel{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch}
 .duel .vs{align-self:center;font-weight:800;color:var(--acc2);font-size:18px}
@@ -148,42 +148,173 @@ footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30p
 </style>
 </head>
 <body>
-<header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who" id="who"></div></div></header>
+<header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who"><span id="who" style="display:contents"></span><button class="btn sm ghost" id="langbtn" data-act="lang"></button></div></div></header>
 <main class="wrap" id="app"></main>
-<footer class="wrap">Données : API Steam (bibliothèque, joueurs connectés, classement), IGDB (temps pour finir) et SteamSpy (genres, avis). Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</footer>
+<footer class="wrap" id="foot"></footer>
 <div id="toast" role="status"></div>
 
 <script>
 /* ---------------- réglages ---------------- */
 const TEMPS = {
-  all:     { label: 'Peu importe' },
-  soiree:  { label: 'Une soirée', hint: '< 5 h', lo: 0,  hi: 5 },
-  soirees: { label: 'Quelques soirées', hint: '5–15 h', lo: 5, hi: 15 },
-  gros:    { label: 'Un gros morceau', hint: '15–40 h', lo: 15, hi: 40 },
-  monde:   { label: 'Un monde où vivre', hint: '40 h +', lo: 40, hi: 9999 },
+  all:     {},
+  soiree:  { hint: '< 5 h', lo: 0,  hi: 5 },
+  soirees: { hint: '5–15 h', lo: 5, hi: 15 },
+  gros:    { hint: '15–40 h', lo: 15, hi: 40 },
+  monde:   { hint: '40 h +', lo: 40, hi: 9999 },
 };
-const MODES = { all: 'Peu importe', solo: 'Solo', coop: 'Coop / à plusieurs' };
+const MODES = ['all', 'solo', 'coop'];
 const COOP_TAGS = ['Co-op', 'Online Co-Op', 'Local Co-Op', 'Local Multiplayer', 'Split Screen'];
 const NON_GAME = new Set(['Utilities', 'Software', 'Design & Illustration', 'Video Production', 'Audio Production', 'Animation & Modeling', 'Web Publishing', 'Photo Editing', 'Game Development', 'Software Training', 'Benchmark']);
 const GENERIC = new Set(['Singleplayer', 'Multiplayer', 'Great Soundtrack', 'Early Access', 'Free to Play', 'Controller', 'Full controller support', 'Indie', 'Casual', 'Atmospheric', 'Beautiful', 'Classic', 'Masterpiece', 'Addictive', 'Fun', 'Good Soundtrack', 'Steam Achievements']);
 const STARTED_MAX = 120; // minutes : en dessous, un jeu compte comme « à peine commencé »
 const LIVE_MAX = 60;      // jeux dont on demande le nombre de joueurs connectés
 const LIVE_MIN = 300;     // joueurs connectés à partir desquels un jeu « a du monde »
-const SPIKE = 1.5;
-const VS_ROUNDS = 10;     // duels avant que le survivant du versus devienne la reco        // joueurs actuels / pic habituel à partir duquel on parle de pic
+const SPIKE = 1.5;        // joueurs actuels / pic habituel à partir duquel on parle de pic
+const VS_ROUNDS = 10;     // duels avant que le survivant du versus devienne la reco
 
 /* ---------------- utilitaires ---------------- */
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
-function fmtN(n) { return n >= 10000 ? Math.round(n / 1000).toLocaleString('fr') + ' k' : n.toLocaleString('fr'); }
-function fmtH(min) { if (!min) return '0 h'; const h = min / 60; return h < 10 ? h.toFixed(1).replace('.', ',') + ' h' : Math.round(h) + ' h'; }
+function fmtN(n) { return n >= 10000 ? Math.round(n / 1000).toLocaleString(LANG) + (LANG === 'fr' ? ' k' : 'k') : n.toLocaleString(LANG); }
+function fmtDec(x) { return LANG === 'fr' ? x.toFixed(1).replace('.', ',') : x.toFixed(1); }
+function fmtH(min) { if (!min) return '0 h'; const h = min / 60; return h < 10 ? fmtDec(h) + ' h' : Math.round(h) + ' h'; }
 function initials(n) { return esc((n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()); }
 function cover(g) {
   return `<img class="cover" loading="lazy" alt="" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg" data-fb="https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg" data-ini="${initials(g.name)}" onerror="imgErr(this)">`;
 }
 function imgErr(i) { if (i.dataset.fb) { const f = i.dataset.fb; i.dataset.fb = ''; i.src = f; } else { const d = document.createElement('div'); d.className = 'ph'; d.textContent = i.dataset.ini; i.replaceWith(d); } }
+
+/* ---------------- langue ---------------- */
+// Français pour tout navigateur en français (fr-FR, fr-BE, fr-CH, fr-CA…), anglais pour les autres. Le choix manuel est gardé (pos.lang).
+const I18N = {
+  fr: {
+    'lang.switch': 'Switch to English', 'lang.btn': '🇬🇧 EN',
+    footer: 'Données : API Steam (bibliothèque, genres, avis, joueurs connectés, classement), IGDB (temps pour finir) et SteamSpy. Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.',
+    'hero.title': 'Trop de jeux, aucune idée de quoi lancer ? <em>On trie ta pile.</em>',
+    'hero.lead': "Colle l'adresse de ton profil Steam. On analyse ta bibliothèque, on devine tes goûts d'après ce que tu as déjà dévoré, et on te propose le prochain jeu selon le temps que tu as devant toi.",
+    'hero.ph': 'https://steamcommunity.com/id/tonpseudo', 'hero.aria': 'Adresse de ton profil Steam',
+    'hero.loading': 'Analyse…', 'hero.go': 'Analyser ma pile',
+    'hero.hint': "Dans Steam : clic sur ton pseudo, puis <b>Profil</b>, puis clic droit et « Copier l'URL de la page ». Le profil doit avoir les <b>détails des jeux en public</b>.",
+    'hero.s1t': '1. Ton profil', 'hero.s1': 'Ta bibliothèque et ton temps de jeu, lus depuis Steam.',
+    'hero.s2t': '2. Tes goûts', 'hero.s2': 'Les genres de tes jeux les plus joués, que tu peux ajuster.',
+    'hero.s3t': '3. Ton prochain jeu', 'hero.s3': 'Choisi selon tes goûts, sa durée et ses avis.',
+    'who.default': 'Profil Steam', 'who.change': 'Changer de profil',
+    'crit.time': 'Combien de temps devant toi ?', 'crit.mode': 'Seul ou à plusieurs ?', 'crit.incl': 'Quels jeux inclure ?', 'crit.change': '⚙️ Changer les critères',
+    'incl.startedT': 'Les jeux à peine commencés', 'incl.started': 'Lancés mais joués moins de 2 h : tu les as à peine entamés.',
+    'incl.playedT': 'Les jeux auxquels tu joues déjà', 'incl.played': 'Plus de 2 h de jeu : de quoi reprendre une partie en cours.',
+    'temps.all': 'Peu importe', 'temps.soiree': 'Une soirée', 'temps.soirees': 'Quelques soirées', 'temps.gros': 'Un gros morceau', 'temps.monde': 'Un monde où vivre',
+    'mode.all': 'Peu importe', 'mode.solo': 'Solo', 'mode.coop': 'Coop / à plusieurs',
+    'tastes.title': 'Tes goûts',
+    'tastes.sub': "Devinés d'après les jeux où tu as passé le plus de temps. Touche un genre pour dire que tu en veux (♥), encore pour l'écarter (✕), une troisième fois pour revenir au neutre. Le chiffre indique combien de tes jeux en font partie.",
+    'next.title': 'À jouer ensuite', 'next.dice': '🎲 Laisse le hasard choisir',
+    'vs.sub': 'Deux jeux de ta pile face à face : touche celui que tu <b>élimines</b>. Le survivant affronte le suivant, et au bout de {n} duels il devient ta reco.',
+    'tr.title': '🔥 Ça bouge en ce moment',
+    'tr.sub': 'Parmi les jeux qui collent à tes critères, ceux où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.',
+    'tr.none': 'Rien ne bouge parmi les jeux qui collent à tes critères. Élargis-les, ou repasse dans quelques jours.', 'tr.wait': 'On regarde qui joue à quoi en ce moment…',
+    'pile.title': 'Toute ta pile',
+    'st.owned': 'jeux possédés', 'st.never': 'jamais lancés ({p} %)', 'st.hours': 'heures au compteur', 'st.done': 'marqués finis ici', 'st.see': 'Voir →',
+    'prog.paused': "L'analyse des jeux s'est interrompue ({done}/{total}). Les recos se basent sur ce qui est déjà analysé.", 'prog.resume': 'Reprendre',
+    'prog.run': 'Analyse des genres et des avis : {done}/{total}',
+    'tags.wait': "Les genres apparaissent au fil de l'analyse…", 'tags.search': 'Chercher un genre…', 'tags.aff': 'Affinité {w} %',
+    'tags.none': 'Aucun genre ne correspond.', 'tags.less': 'Réduire la liste', 'tags.all': 'Voir tous les genres ({n})',
+    'time.unknown': 'Durée inconnue', 'time.igdb': '≈ {h} pour le finir', 'time.spy': '≈ {h} (temps médian des joueurs)',
+    'time.mine': 'Tu y as joué {h}', 'time.over': ' (au-delà de la moyenne)', 'time.pct': ' (≈ {p} %)', 'time.never': 'Jamais lancé',
+    'link.launch': '▶ Lancer dans Steam', 'link.site': '🌐 Voir la page du jeu', 'link.store': 'Page Steam', 'link.chart': 'Courbe des joueurs',
+    'fact.reviews': "{p} % d'avis positifs", 'fact.coop': 'Coop', 'fact.players': '{n} joueurs en ce moment',
+    'why.hits': 'Dans tes cordes : <b>{t}</b>', 'why.genre': 'Genre : {t}', 'why.going': '<b>Tu y joues déjà</b>', 'why.left': ', il te reste ≈ {h}', 'why.slot': 'colle à ton créneau « {s} »',
+    'act.later': 'Pas ce soir', 'act.done': 'Déjà fini', 'act.skip': 'Pas intéressé', 'act.pick': 'Choisir',
+    'reco.analysing': 'Analyse en cours, les premières idées arrivent…', 'reco.none': 'Aucun jeu ne correspond à ces critères. Élargis le temps disponible ou le mode de jeu.',
+    'reco.pick': '🎲 Tiré au sort', 'reco.r0': 'Notre choix', 'reco.r1': 'Plan B', 'reco.r2': 'Plan C',
+    'live.spike': "Pic : ×{x} par rapport à d'habitude", 'live.rank': '{r}ᵉ sur Steam', 'live.new': ' · nouveau dans le top', 'live.climb': ' · +{n} places en une semaine',
+    'view.reco': 'Les recos (selon tes filtres)', 'view.all': 'Toute ta bibliothèque', 'view.never': 'Jamais lancés', 'view.done': 'Marqués finis', 'view.skip': 'Écartés (pas intéressé)', 'view.playing': 'En cours',
+    'sort.score': 'Trier : pertinence', 'sort.duel': 'Trier : tes duels', 'sort.short': "Trier : plus courts d'abord", 'sort.hours': 'Trier : ton temps de jeu', 'sort.name': 'Trier : nom',
+    'pile.search': 'Rechercher dans ta pile…', 'pile.view': 'Quels jeux afficher', 'pile.sort': 'Ordre', 'pile.count1': '{n} jeu', 'pile.countN': '{n} jeux',
+    'pile.more': '{n} autres jeux. Affine ta recherche pour les voir.', 'pile.empty': 'Aucun jeu ici.',
+    'status.done': 'Fini', 'status.skip': 'Écarté', 'status.playing': 'En cours',
+    'unmark.done': 'Pas fini finalement', 'unmark.skip': "Finalement, ça m'intéresse", 'unmark.playing': 'Plus en cours',
+    'vs.win1': '🏆 Ton jeu, après {n} duel', 'vs.winN': '🏆 Ton jeu, après {n} duels', 'vs.more': '🔁 Encore : ça ne me convient pas', 'vs.reset': 'Recommencer à zéro',
+    'vs.empty': 'Plus aucun jeu à opposer avec ces critères.', 'vs.few': 'Il faut au moins deux jeux dans tes recos pour lancer un duel.',
+    'vs.elimAria': 'Éliminer {g}', 'vs.elim': '✕ Éliminer', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Éliminer les deux', 'vs.restart': 'Recommencer',
+    'toast.nomatch': 'Aucun jeu ne correspond à ces critères', 'toast.later': 'Mis de côté pour ce soir', 'toast.done': 'Bien joué ! Marqué comme fini.',
+    'toast.skip': "C'est noté, on ne te le proposera plus.", 'toast.unmark': "C'est noté, le jeu revient dans ta pile.",
+    'err.unexpected': 'Réponse inattendue du serveur.', 'err.load': 'Impossible de charger ce profil.', 'err.network': 'Connexion impossible. Vérifie ta connexion internet et réessaie.',
+    'err.bad_input': "Je n'ai pas reconnu ce profil. Colle l'adresse de ta page de profil Steam (steamcommunity.com/id/… ou steamcommunity.com/profiles/…).",
+    'err.not_found': 'Aucun profil Steam ne correspond à « {u} ».',
+    'err.private': 'Cette bibliothèque est privée. Dans Steam : Profil > Modifier le profil > Paramètres de confidentialité, passe « Détails des jeux » en Public, puis réessaie.',
+    'err.config': "Le serveur n'a pas de clé API Steam configurée.", 'err.upstream': 'Steam ne répond pas pour le moment. Réessaie dans une minute.',
+  },
+  en: {
+    'lang.switch': 'Passer en français', 'lang.btn': '🇫🇷 FR',
+    footer: 'Data: Steam API (library, genres, reviews, players online, charts), IGDB (time to beat) and SteamSpy. Your choices ("finished", "not interested"…) stay in your browser. Not affiliated with Valve.',
+    'hero.title': 'Too many games, no idea what to play? <em>We sort your pile.</em>',
+    'hero.lead': 'Paste your Steam profile link. We scan your library, guess your taste from what you have already devoured, and suggest your next game based on the time you have.',
+    'hero.ph': 'https://steamcommunity.com/id/yourname', 'hero.aria': 'Your Steam profile link',
+    'hero.loading': 'Scanning…', 'hero.go': 'Scan my pile',
+    'hero.hint': 'In Steam: click your name, then <b>Profile</b>, then right-click and "Copy Page URL". Your profile needs <b>game details set to public</b>.',
+    'hero.s1t': '1. Your profile', 'hero.s1': 'Your library and playtime, read from Steam.',
+    'hero.s2t': '2. Your taste', 'hero.s2': 'The genres of your most-played games, which you can tweak.',
+    'hero.s3t': '3. Your next game', 'hero.s3': 'Picked by your taste, its length and its reviews.',
+    'who.default': 'Steam profile', 'who.change': 'Change profile',
+    'crit.time': 'How much time do you have?', 'crit.mode': 'Alone or with friends?', 'crit.incl': 'Which games to include?', 'crit.change': '⚙️ Change filters',
+    'incl.startedT': 'Barely started games', 'incl.started': 'Launched but played under 2 h: you have barely scratched them.',
+    'incl.playedT': 'Games you are already playing', 'incl.played': 'Over 2 h played: pick up where you left off.',
+    'temps.all': 'Any', 'temps.soiree': 'One evening', 'temps.soirees': 'A few evenings', 'temps.gros': 'A big chunk', 'temps.monde': 'A world to live in',
+    'mode.all': 'Any', 'mode.solo': 'Solo', 'mode.coop': 'Co-op / with friends',
+    'tastes.title': 'Your taste',
+    'tastes.sub': 'Guessed from the games you spent the most time on. Tap a genre once to want it (♥), again to rule it out (✕), a third time to reset. The number shows how many of your games have it.',
+    'next.title': 'Play next', 'next.dice': '🎲 Let chance decide',
+    'vs.sub': 'Two games from your pile face off: tap the one you <b>eliminate</b>. The survivor takes on the next one, and after {n} duels it becomes your pick.',
+    'tr.title': '🔥 Hot right now',
+    'tr.sub': 'Among the games that match your filters, the ones with lots of players right now, a spike, or a climb in the Steam charts. Great for online games: the servers are full.',
+    'tr.none': 'Nothing is moving among the games that match your filters. Widen them, or check back in a few days.', 'tr.wait': 'Checking who is playing what right now…',
+    'pile.title': 'Your whole pile',
+    'st.owned': 'games owned', 'st.never': 'never played ({p}%)', 'st.hours': 'hours played', 'st.done': 'marked finished here', 'st.see': 'See →',
+    'prog.paused': 'The game scan stopped ({done}/{total}). Picks are based on what has been scanned so far.', 'prog.resume': 'Resume',
+    'prog.run': 'Scanning genres and reviews: {done}/{total}',
+    'tags.wait': 'Genres show up as the scan goes…', 'tags.search': 'Search a genre…', 'tags.aff': 'Affinity {w}%',
+    'tags.none': 'No genre matches.', 'tags.less': 'Show fewer', 'tags.all': 'See all genres ({n})',
+    'time.unknown': 'Unknown length', 'time.igdb': '≈ {h} to beat', 'time.spy': '≈ {h} (median playtime)',
+    'time.mine': 'You played {h}', 'time.over': ' (past the average)', 'time.pct': ' (≈ {p}%)', 'time.never': 'Never played',
+    'link.launch': '▶ Launch in Steam', 'link.site': '🌐 Game website', 'link.store': 'Steam page', 'link.chart': 'Player chart',
+    'fact.reviews': '{p}% positive reviews', 'fact.coop': 'Co-op', 'fact.players': '{n} playing now',
+    'why.hits': 'Right up your alley: <b>{t}</b>', 'why.genre': 'Genre: {t}', 'why.going': '<b>You are already playing it</b>', 'why.left': ', about {h} left', 'why.slot': 'fits your "{s}" slot',
+    'act.later': 'Not tonight', 'act.done': 'Already finished', 'act.skip': 'Not interested', 'act.pick': 'Pick',
+    'reco.analysing': 'Scanning, first ideas on the way…', 'reco.none': 'No game matches these filters. Allow more time or another play mode.',
+    'reco.pick': '🎲 Random pick', 'reco.r0': 'Our pick', 'reco.r1': 'Plan B', 'reco.r2': 'Plan C',
+    'live.spike': 'Spike: ×{x} vs usual', 'live.rank': '#{r} on Steam', 'live.new': ' · new in the top 100', 'live.climb': ' · up {n} spots this week',
+    'view.reco': 'Picks (your filters)', 'view.all': 'Your whole library', 'view.never': 'Never played', 'view.done': 'Marked finished', 'view.skip': 'Dismissed (not interested)', 'view.playing': 'In progress',
+    'sort.score': 'Sort: relevance', 'sort.duel': 'Sort: your duels', 'sort.short': 'Sort: shortest first', 'sort.hours': 'Sort: your playtime', 'sort.name': 'Sort: name',
+    'pile.search': 'Search your pile…', 'pile.view': 'Which games to show', 'pile.sort': 'Order', 'pile.count1': '{n} game', 'pile.countN': '{n} games',
+    'pile.more': '{n} more games. Narrow your search to see them.', 'pile.empty': 'No games here.',
+    'status.done': 'Finished', 'status.skip': 'Dismissed', 'status.playing': 'In progress',
+    'unmark.done': 'Not finished after all', 'unmark.skip': 'Actually, I am interested', 'unmark.playing': 'No longer playing',
+    'vs.win1': '🏆 Your game, after {n} duel', 'vs.winN': '🏆 Your game, after {n} duels', 'vs.more': '🔁 Again: not for me', 'vs.reset': 'Start over',
+    'vs.empty': 'No more games to pit against each other with these filters.', 'vs.few': 'You need at least two games in your picks to start a duel.',
+    'vs.elimAria': 'Eliminate {g}', 'vs.elim': '✕ Eliminate', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Eliminate both', 'vs.restart': 'Restart',
+    'toast.nomatch': 'No game matches these filters', 'toast.later': 'Set aside for tonight', 'toast.done': 'Well played! Marked as finished.',
+    'toast.skip': 'Got it, we will not suggest it again.', 'toast.unmark': 'Got it, the game is back in your pile.',
+    'err.unexpected': 'Unexpected answer from the server.', 'err.load': 'Could not load this profile.', 'err.network': 'Could not connect. Check your internet connection and try again.',
+    'err.bad_input': 'I did not recognise this profile. Paste the link to your Steam profile page (steamcommunity.com/id/… or steamcommunity.com/profiles/…).',
+    'err.not_found': 'No Steam profile matches "{u}".',
+    'err.private': 'This library is private. In Steam: Profile > Edit Profile > Privacy Settings, set "Game details" to Public, then try again.',
+    'err.config': 'The server has no Steam API key configured.', 'err.upstream': 'Steam is not answering right now. Try again in a minute.',
+  },
+};
+function detectLang() {
+  const saved = store('pos.lang');
+  if (saved === 'fr' || saved === 'en') return saved;
+  const langs = navigator.languages?.length ? navigator.languages : [navigator.language || ''];
+  return /^fr\b/i.test(langs[0] || '') ? 'fr' : 'en';
+}
+let LANG = 'fr';
+function t(k, v = {}) { const s = I18N[LANG][k] ?? I18N.fr[k] ?? k; return s.replace(/\{(\w+)\}/g, (m, x) => (x in v ? v[x] : m)); }
+function applyLang() {
+  document.documentElement.lang = LANG;
+  $('#foot').textContent = t('footer');
+  $('#langbtn').textContent = t('lang.btn'); $('#langbtn').title = t('lang.switch'); $('#langbtn').setAttribute('aria-label', t('lang.switch'));
+}
 
 /* ---------------- état ---------------- */
 const S = {
@@ -313,8 +444,8 @@ async function analyze(input) {
   S.loading = true; S.error = null; render();
   try {
     const r = await fetch('/api/profile?u=' + encodeURIComponent(input));
-    const d = await r.json().catch(() => ({ message: 'Réponse inattendue du serveur.' }));
-    if (!r.ok) { S.error = d.message || 'Impossible de charger ce profil.'; return; }
+    const d = await r.json().catch(() => ({ error: 'unexpected' }));
+    if (!r.ok) { S.error = d.error && I18N.fr['err.' + d.error] ? t('err.' + d.error, { u: input }) : d.message || t('err.load'); return; }
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
@@ -325,7 +456,7 @@ async function analyze(input) {
     const url = new URL(location.href); url.searchParams.set('u', input); history.replaceState(null, '', url);
     enrich();
   } catch (e) {
-    S.error = 'Connexion impossible. Vérifie ta connexion internet et réessaie.';
+    S.error = t('err.network');
   } finally { S.loading = false; render(); }
 }
 
@@ -419,7 +550,8 @@ async function loadLive(run) {
 /* ---------------- rendu ---------------- */
 function render() {
   const app = $('#app');
-  $('#who').innerHTML = S.profile ? `${S.profile.avatar ? `<img src="${esc(S.profile.avatar)}" alt="">` : ''}<span>${esc(S.profile.persona || 'Profil Steam')}</span><button class="btn sm ghost" data-act="change">Changer de profil</button>` : '';
+  $('#who').innerHTML = S.profile ? `${S.profile.avatar ? `<img src="${esc(S.profile.avatar)}" alt="">` : ''}<span>${esc(S.profile.persona || t('who.default'))}</span><button class="btn sm ghost" data-act="change">${t('who.change')}</button>` : '';
+  applyLang();
   if (!S.profile) { app.innerHTML = heroHTML(); bindHero(); return; }
   app.innerHTML = `
     <section class="stats" id="stats"></section>
@@ -427,67 +559,67 @@ function render() {
     <section class="panel" id="criteres" style="scroll-margin-top:12px">
       <div class="ctrl">
         <div>
-          <h3>Combien de temps devant toi ?</h3>
-          <div class="seg">${Object.entries(TEMPS).map(([k, t]) => `<button data-act="temps" data-v="${k}" class="${S.temps === k ? 'on' : ''}">${t.label}${t.hint ? `<small>${t.hint}</small>` : ''}</button>`).join('')}</div>
+          <h3>${t('crit.time')}</h3>
+          <div class="seg">${Object.entries(TEMPS).map(([k, o]) => `<button data-act="temps" data-v="${k}" class="${S.temps === k ? 'on' : ''}">${t('temps.' + k)}${o.hint ? `<small>${o.hint}</small>` : ''}</button>`).join('')}</div>
         </div>
         <div>
-          <h3>Seul ou à plusieurs ?</h3>
-          <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+          <h3>${t('crit.mode')}</h3>
+          <div class="seg">${MODES.map((k) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${t('mode.' + k)}</button>`).join('')}</div>
         </div>
       </div>
       <div class="incl">
-        <h3>Quels jeux inclure ?</h3>
+        <h3>${t('crit.incl')}</h3>
         <div class="opts">
-          <label class="chk"><input type="checkbox" id="started" ${S.started ? 'checked' : ''}><span><b>Les jeux à peine commencés</b><small>Lancés mais joués moins de 2 h : tu les as à peine entamés.</small></span></label>
-          <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}><span><b>Les jeux auxquels tu joues déjà</b><small>Plus de 2 h de jeu : de quoi reprendre une partie en cours.</small></span></label>
+          <label class="chk"><input type="checkbox" id="started" ${S.started ? 'checked' : ''}><span><b>${t('incl.startedT')}</b><small>${t('incl.started')}</small></span></label>
+          <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}><span><b>${t('incl.playedT')}</b><small>${t('incl.played')}</small></span></label>
         </div>
       </div>
     </section>
     <section class="panel">
-      <h2>Tes goûts</h2>
-      <p class="sub">Devinés d'après les jeux où tu as passé le plus de temps. Touche un genre pour dire que tu en veux (♥), encore pour l'écarter (✕), une troisième fois pour revenir au neutre. Le chiffre indique combien de tes jeux en font partie.</p>
+      <h2>${t('tastes.title')}</h2>
+      <p class="sub">${t('tastes.sub')}</p>
       <div id="tags"></div>
     </section>
     <section id="next" style="scroll-margin-top:12px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-        <h2 style="margin:0;font-size:20px">À jouer ensuite</h2>
-        <button class="btn hot sm" data-act="dice">🎲 Laisse le hasard choisir</button>
-        <button class="btn sm" data-act="criteria">⚙️ Changer les critères</button>
+        <h2 style="margin:0;font-size:20px">${t('next.title')}</h2>
+        <button class="btn hot sm" data-act="dice">${t('next.dice')}</button>
+        <button class="btn sm" data-act="criteria">${t('crit.change')}</button>
       </div>
       <div class="recos" id="recos"></div>
     </section>
     <section class="panel" id="versus">
       <h2>⚔️ Versus</h2>
-      <p class="sub">Deux jeux de ta pile face à face : touche celui que tu <b>élimines</b>. Le survivant affronte le suivant, et au bout de ${VS_ROUNDS} duels il devient ta reco.</p>
+      <p class="sub">${t('vs.sub', { n: VS_ROUNDS })}</p>
       <div id="duel"></div>
     </section>
     <section class="panel">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-bottom:4px">
-        <h2 style="margin:0">🔥 Ça bouge en ce moment</h2>
-        <button class="btn sm" data-act="criteria">⚙️ Changer les critères</button>
+        <h2 style="margin:0">${t('tr.title')}</h2>
+        <button class="btn sm" data-act="criteria">${t('crit.change')}</button>
       </div>
-      <p class="sub">Parmi les jeux qui collent à tes critères, ceux où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.</p>
+      <p class="sub">${t('tr.sub')}</p>
       <div id="trends"></div>
     </section>
-    <section class="panel"><details id="pile"><summary>Toute ta pile</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
+    <section class="panel"><details id="pile"><summary>${t('pile.title')}</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
   renderStats(); renderProgress(); renderResults();
 }
 
 function heroHTML() {
   const last = store('pos.last') || '';
   return `<section class="hero">
-    <h1>Trop de jeux, aucune idée de quoi lancer ? <em>On trie ta pile.</em></h1>
-    <p>Colle l'adresse de ton profil Steam. On analyse ta bibliothèque, on devine tes goûts d'après ce que tu as déjà dévoré, et on te propose le prochain jeu selon le temps que tu as devant toi.</p>
+    <h1>${t('hero.title')}</h1>
+    <p>${t('hero.lead')}</p>
     <form class="go" id="go">
-      <input id="u" name="u" type="text" inputmode="url" autocomplete="off" placeholder="https://steamcommunity.com/id/tonpseudo" value="${esc(last)}" aria-label="Adresse de ton profil Steam">
-      <button class="btn pri" ${S.loading ? 'disabled' : ''}>${S.loading ? 'Analyse…' : 'Analyser ma pile'}</button>
+      <input id="u" name="u" type="text" inputmode="url" autocomplete="off" placeholder="${t('hero.ph')}" value="${esc(last)}" aria-label="${t('hero.aria')}">
+      <button class="btn pri" ${S.loading ? 'disabled' : ''}>${S.loading ? t('hero.loading') : t('hero.go')}</button>
     </form>
     ${S.error ? `<p class="err" style="margin-top:12px">${esc(S.error)}</p>` : ''}
-    <p class="hint">Dans Steam : clic sur ton pseudo, puis <b>Profil</b>, puis clic droit et « Copier l'URL de la page ». Le profil doit avoir les <b>détails des jeux en public</b>.</p>
+    <p class="hint">${t('hero.hint')}</p>
     <div class="steps">
-      <div><b>1. Ton profil</b>Ta bibliothèque et ton temps de jeu, lus depuis Steam.</div>
-      <div><b>2. Tes goûts</b>Les genres de tes jeux les plus joués, que tu peux ajuster.</div>
-      <div><b>3. Ton prochain jeu</b>Choisi selon tes goûts, sa durée et ses avis.</div>
+      <div><b>${t('hero.s1t')}</b>${t('hero.s1')}</div>
+      <div><b>${t('hero.s2t')}</b>${t('hero.s2')}</div>
+      <div><b>${t('hero.s3t')}</b>${t('hero.s3')}</div>
     </div>
   </section>`;
 }
@@ -501,10 +633,11 @@ function renderStats() {
   const never = S.games.filter((g) => !g.playtime).length;
   const h = Math.round(S.games.reduce((a, g) => a + g.playtime, 0) / 60);
   const done = Object.values(S.status).filter((s) => s === 'done').length;
-  el.innerHTML = `<button class="stat" data-act="pileview" data-v="all"><b>${n}</b><span>jeux possédés</span></button>
-    <button class="stat shame" data-act="pileview" data-v="never"><b>${never}</b><span>jamais lancés (${n ? Math.round(never / n * 100) : 0} %)</span></button>
-    <button class="stat" data-act="pileview" data-v="hours"><b>${h.toLocaleString('fr')}</b><span>heures au compteur</span></button>
-    <button class="stat" data-act="pileview" data-v="done"><b>${done}</b><span>marqués finis ici</span></button>`;
+  const see = esc(t('st.see'));
+  el.innerHTML = `<button class="stat" data-act="pileview" data-v="all" data-see="${see}"><b>${n.toLocaleString(LANG)}</b><span>${t('st.owned')}</span></button>
+    <button class="stat shame" data-act="pileview" data-v="never" data-see="${see}"><b>${never.toLocaleString(LANG)}</b><span>${t('st.never', { p: n ? Math.round(never / n * 100) : 0 })}</span></button>
+    <button class="stat" data-act="pileview" data-v="hours" data-see="${see}"><b>${h.toLocaleString(LANG)}</b><span>${t('st.hours')}</span></button>
+    <button class="stat" data-act="pileview" data-v="done" data-see="${see}"><b>${done}</b><span>${t('st.done')}</span></button>`;
 }
 
 function renderProgress() {
@@ -512,8 +645,8 @@ function renderProgress() {
   const { done, total, paused } = S.enrich;
   if (!total || (done >= total && !paused)) { el.innerHTML = ''; return; }
   el.innerHTML = paused
-    ? `<div class="err">L'analyse des jeux s'est interrompue (${done}/${total}). Les recos se basent sur ce qui est déjà analysé. <button class="btn sm" data-act="resume">Reprendre</button></div>`
-    : `<div class="progress"><span>Analyse des genres et durées : ${done}/${total}</span><div class="bar"><div style="width:${total ? done / total * 100 : 0}%"></div></div></div>`;
+    ? `<div class="err">${t('prog.paused', { done, total })} <button class="btn sm" data-act="resume">${t('prog.resume')}</button></div>`
+    : `<div class="progress"><span>${t('prog.run', { done, total })}</span><div class="bar"><div style="width:${total ? done / total * 100 : 0}%"></div></div></div>`;
 }
 
 // Tous les genres présents dans ta pile : tes choix ♥ / ✕ d'abord, puis par affinité, puis par nombre de jeux.
@@ -529,63 +662,63 @@ function renderTags() {
   }
   const chosen = [...S.prefs.like, ...S.prefs.dislike];
   const rest = Object.keys({ ...count, ...aff }).filter((t) => !chosen.includes(t))
-    .sort((a, b) => (aff[b] || 0) - (aff[a] || 0) || (count[b] || 0) - (count[a] || 0) || a.localeCompare(b, 'fr'));
+    .sort((a, b) => (aff[b] || 0) - (aff[a] || 0) || (count[b] || 0) - (count[a] || 0) || a.localeCompare(b, LANG));
   const all = [...chosen, ...rest];
-  if (!all.length) { el.innerHTML = '<span class="sub" style="margin:0">Les genres apparaissent au fil de l\'analyse…</span>'; return; }
+  if (!all.length) { el.innerHTML = `<span class="sub" style="margin:0">${t('tags.wait')}</span>`; return; }
   const q = (S.tagQ || '').toLowerCase();
   const list = S.allTags ? all.filter((t) => !q || t.toLowerCase().includes(q)) : all.slice(0, Math.max(TAGS_SHOWN, chosen.length));
   const keepFocus = document.activeElement?.id === 'tagq';
-  el.innerHTML = (S.allTags ? `<input type="search" id="tagq" class="tagq" placeholder="Chercher un genre…" value="${esc(S.tagQ || '')}" aria-label="Chercher un genre">` : '')
-    + `<div class="tags">${list.map((t) => {
-      const cls = S.prefs.like.includes(t) ? 'like' : S.prefs.dislike.includes(t) ? 'dislike' : '';
-      const w = Math.round((aff[t] || 0) * 100);
-      return `<span class="tag ${cls}" data-act="tag" data-v="${esc(t)}" role="button" tabindex="0">${esc(t)}${count[t] ? `<small>${count[t]}</small>` : ''}${!cls && w ? `<i style="--w:${w}%" title="Affinité ${w} %"></i>` : ''}</span>`;
-    }).join('') || '<span class="sub" style="margin:0">Aucun genre ne correspond.</span>'}</div>`
-    + (all.length > TAGS_SHOWN ? `<button class="btn sm ghost" data-act="alltags" style="margin-top:10px">${S.allTags ? 'Réduire la liste' : `Voir tous les genres (${all.length})`}</button>` : '');
+  el.innerHTML = (S.allTags ? `<input type="search" id="tagq" class="tagq" placeholder="${t('tags.search')}" value="${esc(S.tagQ || '')}" aria-label="${t('tags.search')}">` : '')
+    + `<div class="tags">${list.map((tag) => {
+      const cls = S.prefs.like.includes(tag) ? 'like' : S.prefs.dislike.includes(tag) ? 'dislike' : '';
+      const w = Math.round((aff[tag] || 0) * 100);
+      return `<span class="tag ${cls}" data-act="tag" data-v="${esc(tag)}" role="button" tabindex="0">${esc(tag)}${count[tag] ? `<small>${count[tag]}</small>` : ''}${!cls && w ? `<i style="--w:${w}%" title="${t('tags.aff', { w })}"></i>` : ''}</span>`;
+    }).join('') || `<span class="sub" style="margin:0">${t('tags.none')}</span>`}</div>`
+    + (all.length > TAGS_SHOWN ? `<button class="btn sm ghost" data-act="alltags" style="margin-top:10px">${S.allTags ? t('tags.less') : t('tags.all', { n: all.length })}</button>` : '');
   if (keepFocus) { const i = $('#tagq'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
 }
 
 // Durée du jeu (temps médian des joueurs, SteamSpy) et ton temps de jeu (Steam), avec ta progression quand on connaît les deux.
 function timeInfo(g) {
   const d = durOf(g.appid);
-  const dur = !d ? 'Durée inconnue' : d.src === 'igdb' ? `≈ ${fmtH(d.min)} pour le finir` : `≈ ${fmtH(d.min)} (temps médian des joueurs)`;
+  const dur = !d ? t('time.unknown') : t(d.src === 'igdb' ? 'time.igdb' : 'time.spy', { h: fmtH(d.min) });
   if (!g.playtime) return { dur, mine: null };
   const pct = d ? Math.round(g.playtime / d.min * 100) : null;
-  const mine = `Tu y as joué ${fmtH(g.playtime)}` + (pct == null ? '' : pct >= 100 ? ' (au-delà de la moyenne)' : ` (≈ ${pct} %)`);
+  const mine = t('time.mine', { h: fmtH(g.playtime) }) + (pct == null ? '' : pct >= 100 ? t('time.over') : t('time.pct', { p: pct }));
   return { dur, mine };
 }
 function timePills(g) {
-  const t = timeInfo(g);
-  return `<span class="pill">${t.dur}</span>` + (t.mine ? `<span class="pill">${t.mine}</span>` : '<span class="pill new">Jamais lancé</span>');
+  const ti = timeInfo(g);
+  return `<span class="pill">${ti.dur}</span>` + (ti.mine ? `<span class="pill">${ti.mine}</span>` : `<span class="pill new">${t('time.never')}</span>`);
 }
 
 // Liens d'un jeu : lancer, son site officiel (via /api/site, page Steam à défaut), sa page Steam, plus des liens propres à la section.
 function linksHTML(g, extra = '') {
-  return `<div class="links"><a href="steam://run/${g.appid}">▶ Lancer dans Steam</a><a href="/api/site?appid=${g.appid}" target="_blank" rel="noopener">🌐 Voir la page du jeu</a><a href="https://store.steampowered.com/app/${g.appid}" target="_blank" rel="noopener">Page Steam</a>${extra}</div>`;
+  return `<div class="links"><a href="steam://run/${g.appid}">${t('link.launch')}</a><a href="/api/site?appid=${g.appid}" target="_blank" rel="noopener">${t('link.site')}</a><a href="https://store.steampowered.com/app/${g.appid}${LANG === 'fr' ? '?l=french' : ''}" target="_blank" rel="noopener">${t('link.store')}</a>${extra}</div>`;
 }
 
 function factsHTML(r) {
   const f = [];
   f.push(timePills(r.g));
-  if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${p} % d'avis positifs</span>`); }
-  if (isCoop(r.m)) f.push('<span class="pill">Coop</span>');
+  if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${t('fact.reviews', { p })}</span>`); }
+  if (isCoop(r.m)) f.push(`<span class="pill">${t('fact.coop')}</span>`);
   const l = liveOf(r.g.appid);
-  if (l.players >= LIVE_MIN) f.push(`<span class="pill hot">${fmtN(l.players)} joueurs en ce moment</span>`);
+  if (l.players >= LIVE_MIN) f.push(`<span class="pill hot">${t('fact.players', { n: fmtN(l.players) })}</span>`);
   return `<div class="facts">${f.join('')}</div>`;
 }
 function whyHTML(r) {
   const parts = [];
-  if (r.hits.length) parts.push(`Dans tes cordes : <b>${r.hits.map(esc).join(', ')}</b>`);
-  else if (r.m?.tags?.length) parts.push(`Genre : ${r.m.tags.filter((t) => !GENERIC.has(t)).slice(0, 3).map(esc).join(', ')}`);
-  if (r.going) parts.push(`<b>Tu y joues déjà</b>${r.left > 0 ? `, il te reste ≈ ${fmtH(r.left * 60)}` : ''}`);
-  if (S.temps !== 'all' && r.h != null && !r.going && durationFit(r.h) === 1) parts.push(`colle à ton créneau « ${TEMPS[S.temps].label.toLowerCase()} »`);
+  if (r.hits.length) parts.push(t('why.hits', { t: r.hits.map(esc).join(', ') }));
+  else if (r.m?.tags?.length) parts.push(t('why.genre', { t: r.m.tags.filter((x) => !GENERIC.has(x)).slice(0, 3).map(esc).join(', ') }));
+  if (r.going) parts.push(t('why.going') + (r.left > 0 ? t('why.left', { h: fmtH(r.left * 60) }) : ''));
+  if (S.temps !== 'all' && r.h != null && !r.going && durationFit(r.h) === 1) parts.push(t('why.slot', { s: t('temps.' + S.temps).toLowerCase() }));
   return parts.length ? `<div class="why">${parts.join(' · ')}</div>` : '';
 }
 function actsHTML(id, compact) {
   return `<div class="acts">
-    <button class="btn sm" data-act="later" data-id="${id}">Pas ce soir</button>
-    <button class="btn sm" data-act="done" data-id="${id}">Déjà fini</button>
-    <button class="btn sm ghost" data-act="skip" data-id="${id}">Pas intéressé</button>
+    <button class="btn sm" data-act="later" data-id="${id}">${t('act.later')}</button>
+    <button class="btn sm" data-act="done" data-id="${id}">${t('act.done')}</button>
+    <button class="btn sm ghost" data-act="skip" data-id="${id}">${t('act.skip')}</button>
   </div>`;
 }
 
@@ -600,10 +733,10 @@ function renderResults() {
   const isPick = (r) => picked.includes(r);
   if (!top.length) {
     const analysing = S.enrich.done < S.enrich.total && !S.enrich.paused;
-    el.innerHTML = `<div class="panel empty" style="grid-column:1/-1">${analysing ? 'Analyse en cours, les premières idées arrivent…' : 'Aucun jeu ne correspond à ces critères. Élargis le temps disponible ou le mode de jeu.'}</div>`;
+    el.innerHTML = `<div class="panel empty" style="grid-column:1/-1">${analysing ? t('reco.analysing') : t('reco.none')}</div>`;
   } else {
     el.innerHTML = top.map((r, i) => `<article class="card ${isPick(r) ? 'pick' : ''}">${cover(r.g)}<div class="cbody">
-      <div class="rank">${isPick(r) ? '🎲 Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
+      <div class="rank">${isPick(r) ? t('reco.pick') : t('reco.r' + i)}</div>
       <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}
       ${linksHTML(r.g, `<a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a>`)}
       ${actsHTML(r.g.appid)}</div></article>`).join('');
@@ -612,12 +745,13 @@ function renderResults() {
   if ($('#pile')?.open) renderPile();
 }
 
-function liveFactsHTML(t) {
+function liveFactsHTML(tr) {
   const f = [];
-  if (t.l.players != null) f.push(`<span class="pill hot">${fmtN(t.l.players)} joueurs en ce moment</span>`);
-  if (t.l.spike != null && t.l.spike >= SPIKE) f.push(`<span class="pill hot">Pic : ×${t.l.spike.toFixed(1).replace('.', ',')} par rapport à d'habitude</span>`);
-  if (t.l.rank) f.push(`<span class="pill">${t.l.rank}ᵉ sur Steam${t.l.newEntry ? ' · nouveau dans le top' : t.l.climb > 0 ? ` · +${t.l.climb} places en une semaine` : ''}</span>`);
-  f.push(timePills(t.g));
+  const l = tr.l;
+  if (l.players != null) f.push(`<span class="pill hot">${t('fact.players', { n: fmtN(l.players) })}</span>`);
+  if (l.spike != null && l.spike >= SPIKE) f.push(`<span class="pill hot">${t('live.spike', { x: fmtDec(l.spike) })}</span>`);
+  if (l.rank) f.push(`<span class="pill">${t('live.rank', { r: l.rank })}${l.newEntry ? t('live.new') : l.climb > 0 ? t('live.climb', { n: l.climb }) : ''}</span>`);
+  f.push(timePills(tr.g));
   return `<div class="facts">${f.join('')}</div>`;
 }
 function renderTrends() {
@@ -626,24 +760,24 @@ function renderTrends() {
   if (analysed) loadLive(enrichRun); // une fois l'analyse finie, on complète les joueurs connectés pour les nouveaux candidats
   const list = trending().slice(0, 6);
   if (!list.length) {
-    el.innerHTML = `<p class="empty">${analysed && !S.live.busy ? 'Rien ne bouge parmi les jeux qui collent à tes critères. Élargis-les, ou repasse dans quelques jours.' : 'On regarde qui joue à quoi en ce moment…'}</p>`;
+    el.innerHTML = `<p class="empty">${analysed && !S.live.busy ? t('tr.none') : t('tr.wait')}</p>`;
     return;
   }
-  el.innerHTML = `<div class="trends">${list.map((t) => `<article class="card">${cover(t.g)}<div class="cbody">
-    <div class="title">${esc(t.g.name)}</div>${liveFactsHTML(t)}
-    ${linksHTML(t.g, `<a href="https://steamcharts.com/app/${t.g.appid}" target="_blank" rel="noopener">Courbe des joueurs</a>`)}
-    <div class="acts"><button class="btn sm ghost" data-act="skip" data-id="${t.g.appid}">Pas intéressé</button></div>
+  el.innerHTML = `<div class="trends">${list.map((tr) => `<article class="card">${cover(tr.g)}<div class="cbody">
+    <div class="title">${esc(tr.g.name)}</div>${liveFactsHTML(tr)}
+    ${linksHTML(tr.g, `<a href="https://steamcharts.com/app/${tr.g.appid}" target="_blank" rel="noopener">${t('link.chart')}</a>`)}
+    <div class="acts"><button class="btn sm ghost" data-act="skip" data-id="${tr.g.appid}">${t('act.skip')}</button></div>
   </div></article>`).join('')}</div>`;
 }
 
-const VIEWS = { reco: 'Les recos (selon tes filtres)', all: 'Toute ta bibliothèque', never: 'Jamais lancés', done: 'Marqués finis', skip: 'Écartés (pas intéressé)', playing: 'En cours' };
-const SORTS = { score: 'Trier : pertinence', duel: 'Trier : tes duels', short: "Trier : plus courts d'abord", hours: 'Trier : ton temps de jeu', name: 'Trier : nom' };
+const VIEWS = ['reco', 'all', 'never', 'done', 'skip', 'playing'];
+const SORTS = ['score', 'duel', 'short', 'hours', 'name'];
 function renderPile() {
   const body = $('#pilebody'); if (!body) return;
   if (!body.dataset.ready) {
-    body.innerHTML = `<div class="toolbar"><input type="search" id="pq" placeholder="Rechercher dans ta pile…" value="${esc(S.q)}">
-      <select id="pview" aria-label="Quels jeux afficher">${Object.entries(VIEWS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
-      <select id="psort" aria-label="Ordre">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+    body.innerHTML = `<div class="toolbar"><input type="search" id="pq" placeholder="${t('pile.search')}" value="${esc(S.q)}">
+      <select id="pview" aria-label="${t('pile.view')}">${VIEWS.map((k) => `<option value="${k}">${t('view.' + k)}</option>`).join('')}</select>
+      <select id="psort" aria-label="${t('pile.sort')}">${SORTS.map((k) => `<option value="${k}">${t('sort.' + k)}</option>`).join('')}</select></div>
       <p class="sub" id="pcount" style="margin:0 0 4px"></p><div class="list" id="plist"></div>`;
     body.dataset.ready = '1';
     $('#pq').addEventListener('input', (e) => { S.q = e.target.value.trim().toLowerCase(); renderPileList(); });
@@ -667,28 +801,27 @@ function pileRows() {
 }
 function rowActsHTML(r) {
   const id = r.g.appid; const st = S.status[id];
-  if (st === 'done') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Pas fini finalement</button></div>`;
-  if (st === 'skip') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Finalement, ça m'intéresse</button></div>`;
-  if (st === 'playing') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">Plus en cours</button><button class="btn sm" data-act="done" data-id="${id}">Déjà fini</button></div>`;
+  if (st === 'done' || st === 'skip') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">${t('unmark.' + st)}</button></div>`;
+  if (st === 'playing') return `<div class="acts"><button class="btn sm" data-act="unmark" data-id="${id}">${t('unmark.playing')}</button><button class="btn sm" data-act="done" data-id="${id}">${t('act.done')}</button></div>`;
   const canPick = lastRanked.some((x) => x.g.appid === id);
-  return actsHTML(id, true).replace('<div class="acts">', '<div class="acts">' + (canPick ? `<button class="btn sm" data-act="pickthis" data-id="${id}">Choisir</button>` : ''));
+  return actsHTML(id, true).replace('<div class="acts">', '<div class="acts">' + (canPick ? `<button class="btn sm" data-act="pickthis" data-id="${id}">${t('act.pick')}</button>` : ''));
 }
 function renderPileList() {
   let l = pileRows().filter((r) => !S.q || r.g.name.toLowerCase().includes(S.q));
   if (S.sort === 'short') l = [...l].sort((a, b) => (a.h ?? 999) - (b.h ?? 999));
-  if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, 'fr'));
+  if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, LANG));
   if (S.sort === 'hours') l = [...l].sort((a, b) => b.g.playtime - a.g.playtime);
   if (S.sort === 'duel') l = [...l].sort((a, b) => (S.duel[b.g.appid]?.r || 0) - (S.duel[a.g.appid]?.r || 0) || b.score - a.score);
   if (S.sort === 'score' && S.view !== 'reco') l = [...l].sort((a, b) => b.score - a.score || b.g.playtime - a.g.playtime);
-  $('#pcount').textContent = `${l.length} jeu${l.length > 1 ? 'x' : ''}`;
+  $('#pcount').textContent = t(l.length > 1 ? 'pile.countN' : 'pile.count1', { n: l.length.toLocaleString(LANG) });
   const shown = l.slice(0, 200);
   $('#plist').innerHTML = shown.length ? shown.map((r) => {
     const d = S.duel[r.g.appid];
-    const st = { done: 'Fini', skip: 'Écarté', playing: 'En cours' }[S.status[r.g.appid]];
-    return `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || 'Jamais lancé'))(timeInfo(r.g))}${st ? ' · ' + st : ''}${d?.n ? ` · ⚔️ ${d.r > 0 ? '+' : ''}${Math.round(d.r)}` : ''}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small>${linksHTML(r.g)}</div>${rowActsHTML(r)}</div>`;
+    const st = S.status[r.g.appid] ? t('status.' + S.status[r.g.appid]) : '';
+    return `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${(({ dur, mine }) => dur + ' · ' + (mine || t('time.never')))(timeInfo(r.g))}${st ? ' · ' + st : ''}${d?.n ? ` · ⚔️ ${d.r > 0 ? '+' : ''}${Math.round(d.r)}` : ''}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small>${linksHTML(r.g)}</div>${rowActsHTML(r)}</div>`;
   }).join('')
-    + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${l.length - 200} autres jeux. Affine ta recherche pour les voir.</p>` : '')
-    : '<p class="empty">Aucun jeu ici.</p>';
+    + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${t('pile.more', { n: l.length - 200 })}</p>` : '')
+    : `<p class="empty">${t('pile.empty')}</p>`;
 }
 
 /* ---------------- versus ---------------- */
@@ -734,20 +867,20 @@ function renderDuel() {
   if (v.result) {
     const r = lastRanked.find((x) => x.g.appid === v.result);
     el.innerHTML = `<article class="card vswin" style="max-width:520px">${cover(r.g)}<div class="cbody">
-      <div class="rank">🏆 Ton jeu, après ${v.round} duel${v.round > 1 ? 's' : ''}</div>
+      <div class="rank">${t(v.round > 1 ? 'vs.winN' : 'vs.win1', { n: v.round })}</div>
       <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}${linksHTML(r.g)}${actsHTML(r.g.appid)}</div></article>
-      <div class="dueltools"><button class="btn hot sm" data-act="vsmore">🔁 Encore : ça ne me convient pas</button><button class="btn sm ghost" data-act="vsreset">Recommencer à zéro</button></div>`;
+      <div class="dueltools"><button class="btn hot sm" data-act="vsmore">${t('vs.more')}</button><button class="btn sm ghost" data-act="vsreset">${t('vs.reset')}</button></div>`;
     return;
   }
-  if (!v.pair) { el.innerHTML = `<p class="empty">${v.elim.length ? 'Plus aucun jeu à opposer avec ces critères.' : 'Il faut au moins deux jeux dans tes recos pour lancer un duel.'}</p>${v.elim.length ? '<div class="dueltools"><button class="btn sm" data-act="vsreset">Recommencer à zéro</button></div>' : ''}`; return; }
+  if (!v.pair) { el.innerHTML = `<p class="empty">${v.elim.length ? t('vs.empty') : t('vs.few')}</p>${v.elim.length ? `<div class="dueltools"><button class="btn sm" data-act="vsreset">${t('vs.reset')}</button></div>` : ''}`; return; }
   const card = (id) => {
     const g = S.games.find((x) => x.appid === id);
-    return `<button class="card" data-act="vselim" data-id="${id}" aria-label="Éliminer ${esc(g.name)}">${cover(g)}<div class="cbody">
-      <div class="title">${esc(g.name)}</div><div class="facts">${timePills(g)}</div><div class="elim">✕ Éliminer</div></div></button>`;
+    return `<button class="card" data-act="vselim" data-id="${id}" aria-label="${t('vs.elimAria', { g: esc(g.name) })}">${cover(g)}<div class="cbody">
+      <div class="title">${esc(g.name)}</div><div class="facts">${timePills(g)}</div><div class="elim">${t('vs.elim')}</div></div></button>`;
   };
-  el.innerHTML = `<div class="vshead"><b>Duel ${v.round + 1} / ${VS_ROUNDS}</b><div class="vsbar"><div style="width:${v.round / VS_ROUNDS * 100}%"></div></div></div>
+  el.innerHTML = `<div class="vshead"><b>${t('vs.head', { i: v.round + 1, n: VS_ROUNDS })}</b><div class="vsbar"><div style="width:${v.round / VS_ROUNDS * 100}%"></div></div></div>
     <div class="duel">${card(v.pair[0])}<div class="vs">VS</div>${card(v.pair[1])}</div>
-    <div class="dueltools"><button class="btn sm" data-act="vsboth">✕ Éliminer les deux</button>${v.round ? '<button class="btn sm ghost" data-act="vsreset">Recommencer</button>' : ''}</div>`;
+    <div class="dueltools"><button class="btn sm" data-act="vsboth">${t('vs.both')}</button>${v.round ? `<button class="btn sm ghost" data-act="vsreset">${t('vs.restart')}</button>` : ''}</div>`;
 }
 
 /* ---------------- actions ---------------- */
@@ -768,10 +901,10 @@ function showNext() { const el = $('#next'); if (!el) return; const top = el.get
 
 const ACTIONS = {
   change: () => { enrichRun++; S.profile = null; S.games = []; S.error = null; history.replaceState(null, '', location.pathname); render(); },
-  temps: (t) => { S.temps = t.dataset.v; S.picks = []; saveUser(); render(); },
-  mode: (t) => { S.mode = t.dataset.v; S.picks = []; saveUser(); render(); },
-  tag: (t) => {
-    const v = t.dataset.v; const p = S.prefs;
+  temps: (el) => { S.temps = el.dataset.v; S.picks = []; saveUser(); render(); },
+  mode: (el) => { S.mode = el.dataset.v; S.picks = []; saveUser(); render(); },
+  tag: (el) => {
+    const v = el.dataset.v; const p = S.prefs;
     if (p.like.includes(v)) { p.like = p.like.filter((x) => x !== v); p.dislike.push(v); }
     else if (p.dislike.includes(v)) { p.dislike = p.dislike.filter((x) => x !== v); }
     else p.like.push(v);
@@ -781,25 +914,25 @@ const ACTIONS = {
     // Trois nouveaux jeux d'un coup ; on évite de reproposer ceux qui viennent d'être tirés quand il y a assez de choix.
     const fresh = lastRanked.filter((x) => !S.picks.includes(x.g.appid));
     const picks = weightedPicks(fresh.length >= 3 ? fresh : lastRanked, 3);
-    if (!picks.length) { toast('Aucun jeu ne correspond à ces critères'); return; }
+    if (!picks.length) { toast(t('toast.nomatch')); return; }
     S.picks = picks.map((r) => r.g.appid); renderResults(); showNext();
   },
   criteria: () => $('#criteres')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-  go: (t) => { const id = +t.dataset.id; const g = S.games.find((x) => x.appid === id); setStatus(id, 'playing', `Bon jeu sur ${g?.name || 'ce jeu'} ! Il sort des recos.`); },
-  later: (t) => { const id = +t.dataset.id; S.hidden.add(id); S.picks = S.picks.filter((x) => x !== id); toast('Mis de côté pour ce soir'); renderResults(); },
-  done: (t) => setStatus(+t.dataset.id, 'done', 'Bien joué ! Marqué comme fini.'),
-  skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
-  pickthis: (t) => { S.picks = [+t.dataset.id]; renderResults(); showNext(); },
+  later: (el) => { const id = +el.dataset.id; S.hidden.add(id); S.picks = S.picks.filter((x) => x !== id); toast(t('toast.later')); renderResults(); },
+  done: (el) => setStatus(+el.dataset.id, 'done', t('toast.done')),
+  skip: (el) => setStatus(+el.dataset.id, 'skip', t('toast.skip')),
+  pickthis: (el) => { S.picks = [+el.dataset.id]; renderResults(); showNext(); },
   resume: () => enrich(),
+  lang: () => { LANG = LANG === 'fr' ? 'en' : 'fr'; store('pos.lang', LANG); render(); },
   alltags: () => { S.allTags = !S.allTags; S.tagQ = ''; renderTags(); },
-  pileview: (t) => {
-    const v = t.dataset.v;
+  pileview: (el) => {
+    const v = el.dataset.v;
     S.view = v === 'hours' ? 'all' : v; S.sort = v === 'hours' ? 'hours' : v === 'all' || v === 'never' ? 'name' : 'score'; S.q = '';
     const d = $('#pile'); d.open = true; const pq = $('#pq'); if (pq) pq.value = '';
     renderPile(); d.scrollIntoView({ behavior: 'smooth', block: 'start' });
   },
-  unmark: (t) => { const id = +t.dataset.id; delete S.status[id]; saveUser(); toast('C’est noté, le jeu revient dans ta pile.'); renderResults(); },
-  vselim: (t) => vsEliminate([+t.dataset.id]),
+  unmark: (el) => { const id = +el.dataset.id; delete S.status[id]; saveUser(); toast(t('toast.unmark')); renderResults(); },
+  vselim: (el) => vsEliminate([+el.dataset.id]),
   vsboth: () => vsEliminate([...S.vs.pair]),
   vsmore: () => { const v = S.vs; v.elim.push(v.result); v.result = null; v.pair = null; v.round = 0; renderDuel(); $('#versus').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
   vsreset: () => { S.vs = { round: 0, elim: [], pair: null, result: null }; renderDuel(); },
@@ -814,6 +947,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('toggle', (e) => { if (e.target.id === 'pile' && e.target.open) renderPile(); }, true);
 
 /* ---------------- démarrage ---------------- */
+LANG = detectLang();
 render();
 const initial = new URLSearchParams(location.search).get('u');
 if (initial) analyze(initial);

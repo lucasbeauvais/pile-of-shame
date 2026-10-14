@@ -8,7 +8,7 @@ Outil web public et gratuit : n'importe qui colle l'URL de son profil Steam publ
 
 Le problème de départ : on possède trop de jeux, on n'a aucune visibilité sur son catalogue et on ne sait jamais quoi lancer.
 
-Langue de l'interface : **français**.
+Langues de l'interface : **français** et **anglais** (voir « Langue » plus bas).
 
 ## Architecture
 Un seul **Cloudflare Worker** sert à la fois la page statique et l'API.
@@ -101,7 +101,14 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
    - **Repli quand SteamSpy est indisponible** : Steam Store `appdetails` pour les genres et catégories (single-player / co-op).
    - **Mode « à deux »** : croiser deux profils pour trouver un jeu coop possédé par les deux.
 
+## Langue
+- Dictionnaire `I18N = {fr, en}` en tête du script, fonction `t(clé, {variables})`. Tout texte affiché passe par `t()`, y compris les messages d'erreur du serveur, traduits côté page à partir de leur code (`err.<error>`).
+- Détection : `pos.lang` si l'utilisateur a choisi, sinon français pour tout navigateur en français (fr-FR, fr-BE, fr-CH, fr-CA…), anglais pour tous les autres.
+- Bouton 🇬🇧 EN / 🇫🇷 FR dans l'en-tête, à côté de « Changer de profil » ; il re-rend toute la page.
+- Nombres et tris selon la langue (`toLocaleString(LANG)`, `localeCompare(…, LANG)`), virgule décimale en français. Les noms de genres restent ceux de Steam (anglais).
+- Ajouter un texte = ajouter la clé dans `fr` **et** `en`.
+
 ## Conventions
 - JS vanilla, pas de framework ni de bundler. La page reste un fichier unique.
-- Thème sombre unique (palette dans `:root`). Interface en français, tutoiement.
+- Thème sombre unique (palette dans `:root`). Français : tutoiement. Anglais : ton direct et décontracté.
 - Les messages d'erreur expliquent quoi faire, sans jargon.
