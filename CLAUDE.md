@@ -43,6 +43,7 @@ test/worker.test.js tests node:test du relais (npm test)
 
 ## Logique de reco (dans public/index.html)
 - **Candidats** : jeux avec moins de 2 h de jeu, sauf ceux marqués fini, pas intéressé ou en cours, et sauf ceux masqués pour la session.
+  - Case « Inclure les jeux auxquels tu joues déjà » (`played`, décochée par défaut) : ajoute les jeux à plus de 2 h et ceux marqués en cours. Pour eux, l'adéquation au créneau se calcule sur le temps restant (`median` − temps joué) ; durée inconnue (0.45) si ce temps est dépassé.
 - **Exclusions automatiques** :
   - logiciels (tags Utilities, Software…) ;
   - mode coop : uniquement les jeux avec un tag Co-op, Online Co-Op, Local Co-Op ou Split Screen ;

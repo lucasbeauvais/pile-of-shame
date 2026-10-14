@@ -64,7 +64,7 @@ form.go input:focus{border-color:var(--acc)}
 .seg button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;font-size:14px}
 .seg button small{color:var(--mute);margin-left:4px}
 .seg button.on{border-color:var(--acc);background:#1b3348}
-.chk{display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--mute);margin-top:10px;cursor:pointer}
+.chk{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--mute);margin-top:10px;cursor:pointer}
 
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
@@ -158,14 +158,14 @@ function imgErr(i) { if (i.dataset.fb) { const f = i.dataset.fb; i.dataset.fb = 
 const S = {
   profile: null, games: [], meta: store('pos.meta') || {},
   status: {}, prefs: { like: [], dislike: [] },
-  temps: 'all', mode: 'all', started: true,
+  temps: 'all', mode: 'all', started: true, played: false,
   hidden: new Set(), picked: null,
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score',
   live: { players: {}, chart: {}, state: 'idle' },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
-function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started }); }
+function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started, played: S.played }); }
 let metaSaveT;
 function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => store('pos.meta', S.meta), 400); }
 
@@ -208,10 +208,10 @@ function quality(m) { if (!m) return 0.6; return (m.pos + 7.5) / (m.pos + m.neg 
 function evaluate(g, aff) {
   const m = S.meta[g.appid];
   const st = S.status[g.appid];
-  if (st === 'done' || st === 'skip' || st === 'playing') return null;
+  if (st === 'done' || st === 'skip') return null;
   if (S.hidden.has(g.appid)) return null;
-  if (g.playtime >= STARTED_MAX) return null;
-  if (!S.started && g.playtime > 0) return null;
+  const going = st === 'playing' || g.playtime >= STARTED_MAX;
+  if (going ? !S.played : !S.started && g.playtime > 0) return null;
   if (m && isNonGame(m)) return null;
   if (S.mode === 'coop' && !isCoop(m)) return null;
   if (S.mode === 'solo' && isMultiOnly(m)) return null;
@@ -227,11 +227,13 @@ function evaluate(g, aff) {
   const P = m?.tags?.length ? (Math.max(-1, Math.min(1, pref / 2.5)) + 1) / 2 : 0.4;
   const Q = quality(m);
   const h = hoursOf(m);
-  const D = durationFit(h);
-  if (TEMPS[S.temps].hi && h != null && D === 0) return null;
+  // Jeu déjà entamé : ce qui compte pour ton créneau, c'est le temps qu'il te reste.
+  const left = h != null && g.playtime ? h - g.playtime / 60 : h;
+  const D = durationFit(left != null && left > 0 ? left : g.playtime ? null : h);
+  if (TEMPS[S.temps].hi && D === 0) return null;
   const fresh = g.playtime === 0 ? 1 : 0.85;
   const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh;
-  return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q };
+  return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q, going, left };
 }
 
 function ranked() {
@@ -281,7 +283,7 @@ async function analyze(input) {
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
-    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true;
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false;
     S.hidden = new Set(); S.picked = null;
     S.live = { players: {}, chart: {}, state: 'idle' };
     store('pos.last', input);
@@ -372,6 +374,7 @@ function render() {
           <h3>Seul ou à plusieurs ?</h3>
           <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
           <label class="chk"><input type="checkbox" id="started" data-act="started" ${S.started ? 'checked' : ''}> Inclure les jeux à peine commencés (moins de 2 h)</label>
+          <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}> Inclure les jeux auxquels tu joues déjà</label>
         </div>
       </div>
     </section>
@@ -481,7 +484,8 @@ function whyHTML(r) {
   const parts = [];
   if (r.hits.length) parts.push(`Dans tes cordes : <b>${r.hits.map(esc).join(', ')}</b>`);
   else if (r.m?.tags?.length) parts.push(`Genre : ${r.m.tags.filter((t) => !GENERIC.has(t)).slice(0, 3).map(esc).join(', ')}`);
-  if (S.temps !== 'all' && r.h != null && durationFit(r.h) === 1) parts.push(`colle à ton créneau « ${TEMPS[S.temps].label.toLowerCase()} »`);
+  if (r.going) parts.push(`<b>Tu y joues déjà</b>${r.left > 0 ? `, il te reste ≈ ${fmtH(r.left * 60)}` : ''}`);
+  if (S.temps !== 'all' && r.h != null && !r.going && durationFit(r.h) === 1) parts.push(`colle à ton créneau « ${TEMPS[S.temps].label.toLowerCase()} »`);
   return parts.length ? `<div class="why">${parts.join(' · ')}</div>` : '';
 }
 function actsHTML(id, compact) {
@@ -583,7 +587,10 @@ const ACTIONS = {
 };
 document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });
 document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });
-document.addEventListener('change', (e) => { if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); } });
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); }
+  if (e.target.id === 'played') { S.played = e.target.checked; S.picked = null; saveUser(); renderResults(); }
+});
 document.addEventListener('toggle', (e) => { if (e.target.id === 'pile' && e.target.open) renderPile(); }, true);
 
 /* ---------------- démarrage ---------------- */
