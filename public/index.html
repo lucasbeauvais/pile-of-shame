@@ -79,12 +79,20 @@ button.stat::after{content:"Voir →";display:block;font-size:11px;color:var(--a
 .bar div{height:100%;background:var(--acc);transition:width .3s}
 
 .ctrl{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.ctrl h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.ctrl h3,.incl h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
 .seg{display:flex;flex-wrap:wrap;gap:6px}
 .seg button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;font-size:14px}
 .seg button small{color:var(--mute);margin-left:4px}
 .seg button.on{border-color:var(--acc);background:#1b3348}
-.chk{display:flex;gap:6px;align-items:center;font-size:14px;color:var(--mute);margin-top:10px;cursor:pointer}
+.incl{margin-top:18px}
+.incl .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;font-size:15px}
+.chk input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--acc);cursor:pointer}
+.chk b{display:block;font-weight:650}
+.chk small{display:block;color:var(--mute);font-size:13px;margin-top:2px}
+.chk:hover{border-color:var(--acc)}
+.chk:has(input:checked){border-color:var(--acc);background:#1b3348}
+@media (max-width:520px){.incl .opts{grid-template-columns:1fr}}
 
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
@@ -421,8 +429,13 @@ function render() {
         <div>
           <h3>Seul ou à plusieurs ?</h3>
           <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
-          <label class="chk"><input type="checkbox" id="started" data-act="started" ${S.started ? 'checked' : ''}> Inclure les jeux à peine commencés (moins de 2 h)</label>
-          <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}> Inclure les jeux auxquels tu joues déjà</label>
+        </div>
+      </div>
+      <div class="incl">
+        <h3>Quels jeux inclure ?</h3>
+        <div class="opts">
+          <label class="chk"><input type="checkbox" id="started" ${S.started ? 'checked' : ''}><span><b>Les jeux à peine commencés</b><small>Lancés mais joués moins de 2 h : tu les as à peine entamés.</small></span></label>
+          <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}><span><b>Les jeux auxquels tu joues déjà</b><small>Plus de 2 h de jeu : de quoi reprendre une partie en cours.</small></span></label>
         </div>
       </div>
     </section>
