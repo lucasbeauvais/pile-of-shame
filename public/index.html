@@ -173,11 +173,11 @@ const S = {
   profile: null, games: [], meta: store('pos.meta') || {}, ttb: store('pos.ttb') || {},
   status: {}, prefs: { like: [], dislike: [] },
   temps: 'all', mode: 'all', started: true, played: false,
-  hidden: new Set(), picked: null,
+  hidden: new Set(), picks: [],
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score', view: 'reco',
   duel: {}, pair: null, streak: 0,
-  live: { players: {}, chart: {}, state: 'idle' },
+  live: { players: {}, chart: {}, asked: new Set(), busy: false },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
 function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started, played: S.played, duel: S.duel }); }
@@ -274,17 +274,11 @@ function liveOf(id) {
   const climb = c ? (c.lastWeekRank ? c.lastWeekRank - c.rank : 100 - c.rank) : 0;
   return { players, rank: c?.rank || 0, newEntry: !!c && !c.lastWeekRank, climb, spike };
 }
+// Les tendances partent des mêmes candidats que les recos : créneau, solo / coop, cases à cocher et tags ✕ s'appliquent.
 function trending() {
   const out = [];
-  for (const g of S.games) {
-    const st = S.status[g.appid];
-    if (st === 'done' || st === 'skip') continue;
-    const m = S.meta[g.appid];
-    if (m && isNonGame(m)) continue;
-    if (S.mode === 'coop' && !isCoop(m)) continue;
-    if (S.mode === 'solo' && isMultiOnly(m)) continue;
-    if (g.playtime >= STARTED_MAX && g.lastPlayed * 1000 > Date.now() - 30 * 864e5) continue; // tu y joues déjà
-    const l = liveOf(g.appid);
+  for (const r of lastRanked) {
+    const l = liveOf(r.g.appid);
     const busy = (l.players ?? 0) >= LIVE_MIN;
     const spiking = l.spike != null && l.spike >= SPIKE && (l.players ?? 0) >= 100;
     const rising = l.rank && l.climb >= 5;
@@ -292,7 +286,7 @@ function trending() {
     const heat = Math.log10(1 + (l.players ?? (l.rank ? 5000 : 0)))
       + (spiking ? Math.min(l.spike, 5) : 0)
       + (rising ? Math.min(l.climb, 50) / 10 : 0);
-    out.push({ g, m, l, heat });
+    out.push({ g: r.g, m: r.m, l, heat });
   }
   return out.sort((a, b) => b.heat - a.heat);
 }
@@ -308,8 +302,8 @@ async function analyze(input) {
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
     S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.pair = null; S.view = 'reco';
-    S.hidden = new Set(); S.picked = null;
-    S.live = { players: {}, chart: {}, state: 'idle' };
+    S.hidden = new Set(); S.picks = [];
+    S.live = { players: {}, chart: {}, asked: new Set(), busy: false };
     store('pos.last', input);
     const url = new URL(location.href); url.searchParams.set('u', input); history.replaceState(null, '', url);
     enrich();
@@ -339,12 +333,12 @@ async function enrich() {
       for (const id of ids) { const m = d.meta?.[id]; if (m) S.meta[id] = m; }
       saveMeta();
     } catch (e) {
-      S.enrich.paused = true; renderProgress(); loadLive(run); return;
+      S.enrich.paused = true; renderProgress(); renderResults(); return;
     }
     S.enrich.done = Math.min(queue.length, i + ids.length);
     renderProgress(); renderResults();
   }
-  if (run === enrichRun) loadLive(run);
+  if (run === enrichRun) renderResults();
 }
 
 // Temps pour finir (IGDB) pour toute la bibliothèque, par lots de 50. Un jeu inconnu d'IGDB est redemandé au bout de 7 jours.
@@ -379,26 +373,28 @@ async function loadChart() {
   } catch (e) { /* le classement est un bonus : sans lui, on se contente des joueurs connectés */ }
 }
 
-// Joueurs connectés pour les jeux les plus susceptibles d'intéresser : ceux du top Steam, les meilleures recos, et tes jeux favoris.
+// Joueurs connectés pour les candidats du moment : ceux du top Steam et les 40 meilleures recos selon tes critères.
+// Rappelée quand les critères changent : seuls les jeux jamais demandés partent au serveur.
 async function loadLive(run) {
-  if (S.live.state !== 'idle') return;
-  S.live.state = 'loading'; renderTrends();
+  if (S.live.busy) return;
   const ids = [...new Set([
-    ...Object.keys(S.live.chart).map(Number),
-    ...ranked().slice(0, 35).map((r) => r.g.appid),
-    ...S.games.filter((g) => g.playtime >= STARTED_MAX).sort((a, b) => b.playtime - a.playtime).slice(0, 15).map((g) => g.appid),
-  ])].slice(0, LIVE_MAX);
+    ...lastRanked.filter((r) => S.live.chart[r.g.appid]).map((r) => r.g.appid),
+    ...lastRanked.slice(0, 40).map((r) => r.g.appid),
+  ])].filter((id) => !S.live.asked.has(id)).slice(0, LIVE_MAX);
+  if (!ids.length) return;
+  S.live.busy = true; renderTrends();
   for (let i = 0; i < ids.length; i += 15) {
-    if (run !== enrichRun) return;
+    if (run !== enrichRun) { S.live.busy = false; return; }
+    const batch = ids.slice(i, i + 15);
+    batch.forEach((id) => S.live.asked.add(id));
     try {
-      const r = await fetch('/api/players?ids=' + ids.slice(i, i + 15).join(','));
+      const r = await fetch('/api/players?ids=' + batch.join(','));
       if (!r.ok) throw new Error();
       const d = await r.json();
       for (const [id, n] of Object.entries(d.players || {})) if (n != null) S.live.players[id] = n;
     } catch (e) { break; }
-    renderTrends();
   }
-  S.live.state = 'done'; renderResults();
+  S.live.busy = false; renderResults();
 }
 
 /* ---------------- rendu ---------------- */
@@ -409,7 +405,7 @@ function render() {
   app.innerHTML = `
     <section class="stats" id="stats"></section>
     <section id="progress"></section>
-    <section class="panel">
+    <section class="panel" id="criteres" style="scroll-margin-top:12px">
       <div class="ctrl">
         <div>
           <h3>Combien de temps devant toi ?</h3>
@@ -432,6 +428,7 @@ function render() {
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
         <h2 style="margin:0;font-size:20px">À jouer ensuite</h2>
         <button class="btn hot sm" data-act="dice">🎲 Laisse le hasard choisir</button>
+        <button class="btn sm" data-act="criteria">⚙️ Changer les critères</button>
       </div>
       <div class="recos" id="recos"></div>
     </section>
@@ -441,8 +438,11 @@ function render() {
       <div id="duel"></div>
     </section>
     <section class="panel">
-      <h2>🔥 Ça bouge en ce moment</h2>
-      <p class="sub">Les jeux de ta bibliothèque où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between;margin-bottom:4px">
+        <h2 style="margin:0">🔥 Ça bouge en ce moment</h2>
+        <button class="btn sm" data-act="criteria">⚙️ Changer les critères</button>
+      </div>
+      <p class="sub">Parmi les jeux qui collent à tes critères, ceux où il y a du monde en ce moment, qui connaissent un pic ou qui remontent dans le classement Steam. Idéal pour un jeu en ligne : les serveurs sont pleins.</p>
       <div id="trends"></div>
     </section>
     <section class="panel"><details id="pile"><summary>Toute ta pile</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
@@ -559,16 +559,18 @@ function renderResults() {
   const el = $('#recos'); if (!el) return;
   lastRanked = ranked();
   let top = lastRanked.slice(0, 3);
-  if (S.picked) { const p = lastRanked.find((r) => r.g.appid === S.picked); if (p) top = [p, ...top.filter((r) => r !== p)].slice(0, 3); }
+  const picked = S.picks.map((id) => lastRanked.find((r) => r.g.appid === id)).filter(Boolean);
+  if (picked.length) top = [...picked, ...top.filter((r) => !picked.includes(r))].slice(0, 3);
+  const isPick = (r) => picked.includes(r);
   if (!top.length) {
     const analysing = S.enrich.done < S.enrich.total && !S.enrich.paused;
     el.innerHTML = `<div class="panel empty" style="grid-column:1/-1">${analysing ? 'Analyse en cours, les premières idées arrivent…' : 'Aucun jeu ne correspond à ces critères. Élargis le temps disponible ou le mode de jeu.'}</div>`;
   } else {
-    el.innerHTML = top.map((r, i) => `<article class="card ${r.g.appid === S.picked ? 'pick' : ''}">${cover(r.g)}<div class="cbody">
-      <div class="rank">${r.g.appid === S.picked ? 'Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
+    el.innerHTML = top.map((r, i) => `<article class="card ${isPick(r) ? 'pick' : ''}">${cover(r.g)}<div class="cbody">
+      <div class="rank">${isPick(r) ? '🎲 Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
       <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}
       ${linksHTML(r.g, `<a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a>`)}
-      ${actsHTML(r.g.appid)}${r.g.appid === S.picked ? '<button class="btn hot sm" data-act="dice" style="align-self:flex-start">🎲 Un autre</button>' : ''}</div></article>`).join('');
+      ${actsHTML(r.g.appid)}</div></article>`).join('');
   }
   renderTrends(); renderDuel();
   if ($('#pile')?.open) renderPile();
@@ -584,9 +586,11 @@ function liveFactsHTML(t) {
 }
 function renderTrends() {
   const el = $('#trends'); if (!el) return;
+  const analysed = S.enrich.paused || S.enrich.done >= S.enrich.total;
+  if (analysed) loadLive(enrichRun); // une fois l'analyse finie, on complète les joueurs connectés pour les nouveaux candidats
   const list = trending().slice(0, 6);
   if (!list.length) {
-    el.innerHTML = `<p class="empty">${S.live.state === 'done' ? 'Rien de particulier dans ta bibliothèque en ce moment. Repasse dans quelques jours.' : 'On regarde qui joue à quoi en ce moment…'}</p>`;
+    el.innerHTML = `<p class="empty">${analysed && !S.live.busy ? 'Rien ne bouge parmi les jeux qui collent à tes critères. Élargis-les, ou repasse dans quelques jours.' : 'On regarde qui joue à quoi en ce moment…'}</p>`;
     return;
   }
   el.innerHTML = `<div class="trends">${list.map((t) => `<article class="card">${cover(t.g)}<div class="cbody">
@@ -693,29 +697,45 @@ function renderDuel() {
 }
 
 /* ---------------- actions ---------------- */
-function setStatus(id, s, msg) { S.status[id] = s; if (S.picked === id) S.picked = null; saveUser(); toast(msg); renderResults(); }
-function weightedPick(list) { const pool = list.slice(0, 15); const w = pool.map((r) => r.score ** 3); const t = w.reduce((a, b) => a + b, 0); let x = Math.random() * t; for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return pool[i]; } return pool[0]; }
+function setStatus(id, s, msg) { S.status[id] = s; S.picks = S.picks.filter((x) => x !== id); saveUser(); toast(msg); renderResults(); }
+// Tire n jeux différents parmi les 15 meilleurs, au hasard mais en favorisant les mieux notés.
+function weightedPicks(list, n) {
+  const pool = list.slice(0, 15); const out = [];
+  while (out.length < n && pool.length) {
+    const w = pool.map((r) => r.score ** 3); let x = Math.random() * w.reduce((a, b) => a + b, 0);
+    let i = 0; while (i < pool.length - 1 && (x -= w[i]) > 0) i++;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
 
 // Amène « À jouer ensuite » en haut de l'écran, bouton 🎲 compris, seulement si ce n'est pas déjà visible.
 function showNext() { const el = $('#next'); if (!el) return; const top = el.getBoundingClientRect().top; if (top < 0 || top > innerHeight * 0.6) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
 
 const ACTIONS = {
   change: () => { enrichRun++; S.profile = null; S.games = []; S.error = null; history.replaceState(null, '', location.pathname); render(); },
-  temps: (t) => { S.temps = t.dataset.v; S.picked = null; saveUser(); render(); },
-  mode: (t) => { S.mode = t.dataset.v; S.picked = null; saveUser(); render(); },
+  temps: (t) => { S.temps = t.dataset.v; S.picks = []; saveUser(); render(); },
+  mode: (t) => { S.mode = t.dataset.v; S.picks = []; saveUser(); render(); },
   tag: (t) => {
     const v = t.dataset.v; const p = S.prefs;
     if (p.like.includes(v)) { p.like = p.like.filter((x) => x !== v); p.dislike.push(v); }
     else if (p.dislike.includes(v)) { p.dislike = p.dislike.filter((x) => x !== v); }
     else p.like.push(v);
-    S.picked = null; saveUser(); renderResults();
+    S.picks = []; saveUser(); renderResults();
   },
-  dice: () => { const r = weightedPick(lastRanked.filter((x) => x.g.appid !== S.picked)); if (!r) { toast('Aucun jeu ne correspond à ces critères'); return; } S.picked = r.g.appid; renderResults(); showNext(); },
+  dice: () => {
+    // Trois nouveaux jeux d'un coup ; on évite de reproposer ceux qui viennent d'être tirés quand il y a assez de choix.
+    const fresh = lastRanked.filter((x) => !S.picks.includes(x.g.appid));
+    const picks = weightedPicks(fresh.length >= 3 ? fresh : lastRanked, 3);
+    if (!picks.length) { toast('Aucun jeu ne correspond à ces critères'); return; }
+    S.picks = picks.map((r) => r.g.appid); renderResults(); showNext();
+  },
+  criteria: () => $('#criteres')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
   go: (t) => { const id = +t.dataset.id; const g = S.games.find((x) => x.appid === id); setStatus(id, 'playing', `Bon jeu sur ${g?.name || 'ce jeu'} ! Il sort des recos.`); },
-  later: (t) => { const id = +t.dataset.id; S.hidden.add(id); if (S.picked === id) S.picked = null; toast('Mis de côté pour ce soir'); renderResults(); },
+  later: (t) => { const id = +t.dataset.id; S.hidden.add(id); S.picks = S.picks.filter((x) => x !== id); toast('Mis de côté pour ce soir'); renderResults(); },
   done: (t) => setStatus(+t.dataset.id, 'done', 'Bien joué ! Marqué comme fini.'),
   skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
-  pickthis: (t) => { S.picked = +t.dataset.id; renderResults(); showNext(); },
+  pickthis: (t) => { S.picks = [+t.dataset.id]; renderResults(); showNext(); },
   resume: () => enrich(),
   pileview: (t) => {
     const v = t.dataset.v;
@@ -747,7 +767,7 @@ document.addEventListener('click', (e) => { const t = e.target.closest('[data-ac
 document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });
 document.addEventListener('change', (e) => {
   if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); }
-  if (e.target.id === 'played') { S.played = e.target.checked; S.picked = null; saveUser(); renderResults(); }
+  if (e.target.id === 'played') { S.played = e.target.checked; S.picks = []; saveUser(); renderResults(); }
 });
 document.addEventListener('toggle', (e) => { if (e.target.id === 'pile' && e.target.open) renderPile(); }, true);
 
