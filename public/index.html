@@ -43,6 +43,8 @@ form.go input:focus{border-color:var(--acc)}
 .btn.ghost{background:none}
 .btn[disabled]{opacity:.5;cursor:wait}
 
+.note{background:#2a2414;border:1px solid #5a4a20;color:#f2d58a;border-radius:10px;padding:12px 14px;margin:0;font-size:14px}
+.note b{color:#ffe7a8}
 .err{background:#2a1517;border:1px solid #5a2a2d;color:#ffb4ae;border-radius:10px;padding:12px 14px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px}
 .panel h2{margin:0 0 4px;font-size:17px}
@@ -239,6 +241,7 @@ const I18N = {
     'vs.elimAria': 'Éliminer {g}', 'vs.elim': '✕ Éliminer', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Éliminer les deux', 'vs.restart': 'Recommencer',
     'toast.nomatch': 'Aucun jeu ne correspond à ces critères', 'toast.later': 'Mis de côté pour ce soir', 'toast.done': 'Bien joué ! Marqué comme fini.',
     'toast.skip': "C'est noté, on ne te le proposera plus.", 'toast.unmark': "C'est noté, le jeu revient dans ta pile.",
+    'note.hidden': "Le temps de jeu de ce profil est masqué : Steam renvoie 0 h pour tous ses jeux. Impossible donc de deviner tes goûts ou de savoir ce que tu as déjà commencé. Pour corriger : dans Steam, <b>Profil › Modifier le profil › Paramètres de confidentialité</b>, décoche « Toujours garder mon temps de jeu total privé ». En attendant, choisis tes genres avec ♥ dans « Tes goûts ».",
     'err.unexpected': 'Réponse inattendue du serveur.', 'err.load': 'Impossible de charger ce profil.', 'err.network': 'Connexion impossible. Vérifie ta connexion internet et réessaie.',
     'err.bad_input': "Je n'ai pas reconnu ce profil. Colle l'adresse de ta page de profil Steam (steamcommunity.com/id/… ou steamcommunity.com/profiles/…).",
     'err.not_found': 'Aucun profil Steam ne correspond à « {u} ».',
@@ -295,6 +298,7 @@ const I18N = {
     'vs.elimAria': 'Eliminate {g}', 'vs.elim': '✕ Eliminate', 'vs.head': 'Duel {i} / {n}', 'vs.both': '✕ Eliminate both', 'vs.restart': 'Restart',
     'toast.nomatch': 'No game matches these filters', 'toast.later': 'Set aside for tonight', 'toast.done': 'Well played! Marked as finished.',
     'toast.skip': 'Got it, we will not suggest it again.', 'toast.unmark': 'Got it, the game is back in your pile.',
+    'note.hidden': 'This profile hides its playtime: Steam returns 0 h for every game. So we cannot guess your taste or tell what you have already started. To fix it: in Steam, <b>Profile › Edit Profile › Privacy Settings</b>, untick "Always keep my total playtime private". Meanwhile, pick your genres with ♥ in "Your taste".',
     'err.unexpected': 'Unexpected answer from the server.', 'err.load': 'Could not load this profile.', 'err.network': 'Could not connect. Check your internet connection and try again.',
     'err.bad_input': 'I did not recognise this profile. Paste the link to your Steam profile page (steamcommunity.com/id/… or steamcommunity.com/profiles/…).',
     'err.not_found': 'No Steam profile matches "{u}".',
@@ -555,6 +559,7 @@ function render() {
   if (!S.profile) { app.innerHTML = heroHTML(); bindHero(); return; }
   app.innerHTML = `
     <section class="stats" id="stats"></section>
+    <section id="note"></section>
     <section id="progress"></section>
     <section class="panel" id="criteres" style="scroll-margin-top:12px">
       <div class="ctrl">
@@ -602,7 +607,7 @@ function render() {
       <div id="trends"></div>
     </section>
     <section class="panel"><details id="pile"><summary>${t('pile.title')}</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
-  renderStats(); renderProgress(); renderResults();
+  renderStats(); renderNote(); renderProgress(); renderResults();
 }
 
 function heroHTML() {
@@ -640,6 +645,12 @@ function renderStats() {
     <button class="stat" data-act="pileview" data-v="done" data-see="${see}"><b>${done}</b><span>${t('st.done')}</span></button>`;
 }
 
+// Profil dont le temps de jeu est privé : tous les jeux à 0 h, l'affinité ne peut rien deviner.
+function renderNote() {
+  const el = $('#note'); if (!el) return;
+  const hidden = S.games.length >= 10 && S.games.every((g) => !g.playtime);
+  el.innerHTML = hidden ? `<p class="note">${t('note.hidden')}</p>` : '';
+}
 function renderProgress() {
   const el = $('#progress'); if (!el) return;
   const { done, total, paused } = S.enrich;

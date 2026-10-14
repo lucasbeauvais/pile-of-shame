@@ -57,6 +57,8 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
   - mode solo : on retire les jeux MMO et ceux tournés vers le PvP sans tag Singleplayer ;
   - un tag marqué ✕ dans le top 5 des tags du jeu.
 - **Tes goûts** (`renderTags`) : tous les genres de la pile (8 premiers tags de chaque jeu, hors fini / écarté, hors génériques), avec le nombre de jeux concernés. Ordre : ♥ / ✕ choisis, puis affinité, puis nombre de jeux. 16 visibles (`TAGS_SHOWN`), le reste derrière « Voir tous les genres », avec une recherche.
+- **Temps de jeu masqué** (`renderNote`) : si tous les jeux sont à 0 h (au moins 10 jeux), le profil a coché « Toujours garder mon temps de jeu total privé » dans Steam. Un message l'explique ; l'affinité est vide et seuls les ♥ comptent. Sans rapport avec les durées.
+- **Durées** : depuis le passage de `/api/meta` sur Steam, elles viennent presque toutes d'IGDB. Sans `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`, la plupart s'affichent « Durée inconnue ».
 - **Affinité** : somme des tags des jeux joués plus de 2 h, pondérée par log(1 + heures) et par le rang du tag, puis normalisée sur 0–1. Les tags génériques (Indie, Singleplayer…) sont ignorés.
 - **Score** :
   - avec un créneau choisi : `0.45·goûts + 0.22·avis + 0.33·durée` ;
