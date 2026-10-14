@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pile of Shame</title>
+<meta name="description" content="Colle ton profil Steam et découvre à quel jeu de ta bibliothèque jouer ensuite, selon ton temps libre et tes goûts.">
+<style>
+:root{--bg:#0e1319;--panel:#161d26;--panel2:#1d2631;--line:#2a3644;--txt:#e6edf3;--mute:#8b98a5;--acc:#66c0f4;--acc2:#ff7a59;--ok:#5ec27a;--warn:#e3b341;--bad:#e5534b;--r:12px;color-scheme:dark}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:14px;padding-block:14px;flex-wrap:wrap}
+.logo{font-weight:800;font-size:20px;letter-spacing:-.02em}
+.logo span{color:var(--acc2)}
+.who{display:flex;align-items:center;gap:10px;margin-left:auto;color:var(--mute);font-size:14px}
+.who img{width:32px;height:32px;border-radius:6px}
+main{padding-block:24px 70px;display:flex;flex-direction:column;gap:22px}
+
+.hero{padding-block:40px 10px;max-width:720px}
+.hero h1{font-size:clamp(28px,5vw,44px);line-height:1.1;margin:0 0 12px;letter-spacing:-.03em;text-wrap:balance}
+.hero h1 em{font-style:normal;color:var(--acc2)}
+.hero p{color:var(--mute);margin:0 0 22px;max-width:60ch}
+form.go{display:flex;gap:8px;flex-wrap:wrap}
+form.go input{flex:1 1 300px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;outline:none}
+form.go input:focus{border-color:var(--acc)}
+.hint{font-size:13px;color:var(--mute);margin-top:10px}
+.hint code{background:var(--panel);padding:1px 6px;border-radius:4px;color:var(--txt)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:30px}
+.steps div{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;font-size:14px;color:var(--mute)}
+.steps b{display:block;color:var(--txt);margin-bottom:3px}
+
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 16px;cursor:pointer;font-weight:650;white-space:nowrap}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#081521}
+.btn.hot{background:var(--acc2);border-color:var(--acc2);color:#fff}
+.btn.sm{padding:6px 11px;font-size:13px;border-radius:8px}
+.btn.ghost{background:none}
+.btn[disabled]{opacity:.5;cursor:wait}
+
+.err{background:#2a1517;border:1px solid #5a2a2d;color:#ffb4ae;border-radius:10px;padding:12px 14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+.panel h2{margin:0 0 4px;font-size:17px}
+.sub{color:var(--mute);font-size:13px;margin:0 0 12px}
+
+.stats{display:flex;gap:10px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:120px}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:12px;color:var(--mute)}
+.stat.shame b{color:var(--acc2)}
+
+.progress{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mute)}
+.bar{flex:1;height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.bar div{height:100%;background:var(--acc);transition:width .3s}
+
+.ctrl{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.ctrl h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;font-size:14px}
+.seg button small{color:var(--mute);margin-left:4px}
+.seg button.on{border-color:var(--acc);background:#1b3348}
+.chk{display:inline-flex;gap:6px;align-items:center;font-size:14px;color:var(--mute);margin-top:10px;cursor:pointer}
+
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;user-select:none}
+.tag i{font-style:normal;width:28px;height:4px;border-radius:2px;background:var(--line);position:relative;overflow:hidden}
+.tag i::after{content:"";position:absolute;inset:0;width:var(--w);background:var(--acc)}
+.tag.like{border-color:var(--ok);background:#173023}
+.tag.like::before{content:"♥";color:var(--ok)}
+.tag.dislike{border-color:var(--bad);background:#2d1719;text-decoration:line-through;color:var(--mute)}
+.tag.dislike::before{content:"✕";color:var(--bad);text-decoration:none}
+.legend{font-size:12px;color:var(--mute);margin-top:8px}
+
+.recos{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.card.pick{border-color:var(--acc2);box-shadow:0 0 0 2px var(--acc2)}
+.cover{width:100%;aspect-ratio:460/215;object-fit:cover;display:block;background:var(--panel2);max-width:100%}
+.ph{aspect-ratio:460/215;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;background:linear-gradient(135deg,#2b4a6b,#5a3a6b)}
+.cbody{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
+.rank{font-size:12px;color:var(--acc2);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.title{font-weight:750;font-size:17px;line-height:1.25}
+.facts{display:flex;flex-wrap:wrap;gap:5px}
+.pill{font-size:12px;border-radius:99px;padding:2px 8px;background:var(--panel2);color:var(--mute);white-space:nowrap}
+.pill.good{color:var(--ok)}.pill.new{color:var(--acc2)}
+.why{font-size:13px;color:var(--mute)}
+.why b{color:var(--txt);font-weight:600}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:4px}
+
+.list{display:flex;flex-direction:column}
+.li{display:grid;grid-template-columns:120px 1fr auto;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.li img,.li .ph{width:120px;border-radius:6px;font-size:14px}
+.li .nm{font-weight:600;min-width:0}
+.li .nm small{display:block;color:var(--mute);font-weight:400;font-size:12px}
+.li .acts{margin:0;padding:0}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.toolbar input,.toolbar select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+.toolbar input{flex:1 1 200px}
+details>summary{cursor:pointer;font-weight:700;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"▸ ";color:var(--mute)}
+details[open]>summary::before{content:"▾ "}
+.empty{color:var(--mute);text-align:center;padding:24px}
+footer{color:var(--mute);font-size:12px;text-align:center;padding-block:10px 30px}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,120px);background:var(--panel2);border:1px solid var(--acc);border-radius:10px;padding:10px 16px;transition:transform .25s;max-width:90vw;z-index:20}
+#toast.show{transform:translate(-50%,0)}
+@media (max-width:860px){.recos{grid-template-columns:1fr}.ctrl{grid-template-columns:1fr}.steps{grid-template-columns:1fr}}
+@media (max-width:520px){.li{grid-template-columns:72px 1fr}.li img,.li .ph{width:72px}.li .acts{grid-column:1/-1}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><div class="wrap top"><div class="logo">Pile of <span>Shame</span></div><div class="who" id="who"></div></div></header>
+<main class="wrap" id="app"></main>
+<footer class="wrap">Données : API Steam et SteamSpy. Tes choix (« déjà fini », « pas intéressé »…) restent dans ton navigateur. Pas affilié à Valve.</footer>
+<div id="toast" role="status"></div>
+
+<script>
+/* ---------------- réglages ---------------- */
+const TEMPS = {
+  all:     { label: 'Peu importe' },
+  soiree:  { label: 'Une soirée', hint: '< 5 h', lo: 0,  hi: 5 },
+  soirees: { label: 'Quelques soirées', hint: '5–15 h', lo: 5, hi: 15 },
+  gros:    { label: 'Un gros morceau', hint: '15–40 h', lo: 15, hi: 40 },
+  monde:   { label: 'Un monde où vivre', hint: '40 h +', lo: 40, hi: 9999 },
+};
+const MODES = { all: 'Peu importe', solo: 'Solo', coop: 'Coop / à plusieurs' };
+const COOP_TAGS = ['Co-op', 'Online Co-Op', 'Local Co-Op', 'Local Multiplayer', 'Split Screen'];
+const NON_GAME = new Set(['Utilities', 'Software', 'Design & Illustration', 'Video Production', 'Audio Production', 'Animation & Modeling', 'Web Publishing', 'Photo Editing', 'Game Development', 'Software Training', 'Benchmark']);
+const GENERIC = new Set(['Singleplayer', 'Multiplayer', 'Great Soundtrack', 'Early Access', 'Free to Play', 'Controller', 'Full controller support', 'Indie', 'Casual', 'Atmospheric', 'Beautiful', 'Classic', 'Masterpiece', 'Addictive', 'Fun', 'Good Soundtrack', 'Steam Achievements']);
+const STARTED_MAX = 120; // minutes : en dessous, un jeu compte comme « à peine commencé »
+
+/* ---------------- utilitaires ---------------- */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || 'null'); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
+function fmtH(min) { if (!min) return '0 h'; const h = min / 60; return h < 10 ? h.toFixed(1).replace('.', ',') + ' h' : Math.round(h) + ' h'; }
+function initials(n) { return esc((n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()); }
+function cover(g) {
+  return `<img class="cover" loading="lazy" alt="" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${g.appid}/header.jpg" data-fb="https://cdn.cloudflare.steamstatic.com/steam/apps/${g.appid}/header.jpg" data-ini="${initials(g.name)}" onerror="imgErr(this)">`;
+}
+function imgErr(i) { if (i.dataset.fb) { const f = i.dataset.fb; i.dataset.fb = ''; i.src = f; } else { const d = document.createElement('div'); d.className = 'ph'; d.textContent = i.dataset.ini; i.replaceWith(d); } }
+
+/* ---------------- état ---------------- */
+const S = {
+  profile: null, games: [], meta: store('pos.meta') || {},
+  status: {}, prefs: { like: [], dislike: [] },
+  temps: 'all', mode: 'all', started: true,
+  hidden: new Set(), picked: null,
+  loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
+  q: '', sort: 'score',
+};
+function userKey() { return 'pos.u.' + S.profile.steamid; }
+function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, started: S.started }); }
+let metaSaveT;
+function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => store('pos.meta', S.meta), 400); }
+
+/* ---------------- moteur de reco ---------------- */
+function hoursOf(m) { return m && m.median ? m.median / 60 : null; }
+function isCoop(m) { return !!m?.tags?.some((t) => COOP_TAGS.includes(t)); }
+function isMultiOnly(m) {
+  if (!m?.tags?.length) return false;
+  if (m.tags.includes('Massively Multiplayer')) return true;
+  const top = m.tags.slice(0, 5);
+  return (top.includes('PvP') || top.includes('Multiplayer') || top.includes('Battle Royale')) && !m.tags.includes('Singleplayer');
+}
+function isNonGame(m) { return !!m?.tags?.slice(0, 5).some((t) => NON_GAME.has(t)); }
+
+function affinity() {
+  const w = {};
+  for (const g of S.games) {
+    if (g.playtime < STARTED_MAX) continue;
+    const m = S.meta[g.appid];
+    if (!m?.tags) continue;
+    const h = Math.log1p(g.playtime / 60);
+    m.tags.slice(0, 10).forEach((t, i) => { if (!GENERIC.has(t) && !NON_GAME.has(t)) w[t] = (w[t] || 0) + h * (1 - i * 0.07); });
+  }
+  const max = Math.max(0, ...Object.values(w));
+  if (max) for (const k in w) w[k] /= max;
+  return w;
+}
+
+function durationFit(h) {
+  const t = TEMPS[S.temps];
+  if (!t.hi) return 1;
+  if (h == null) return 0.45;
+  if (h >= t.lo && h <= t.hi) return 1;
+  const d = h < t.lo ? Math.log((t.lo || 1) / Math.max(h, 0.2)) : Math.log(h / t.hi);
+  return Math.max(0, 1 - d / 1.1);
+}
+
+function quality(m) { if (!m) return 0.6; return (m.pos + 7.5) / (m.pos + m.neg + 10); }
+
+function evaluate(g, aff) {
+  const m = S.meta[g.appid];
+  const st = S.status[g.appid];
+  if (st === 'done' || st === 'skip' || st === 'playing') return null;
+  if (S.hidden.has(g.appid)) return null;
+  if (g.playtime >= STARTED_MAX) return null;
+  if (!S.started && g.playtime > 0) return null;
+  if (m && isNonGame(m)) return null;
+  if (S.mode === 'coop' && !isCoop(m)) return null;
+  if (S.mode === 'solo' && isMultiOnly(m)) return null;
+
+  let pref = 0; const hits = []; let blocked = false;
+  (m?.tags || []).slice(0, 10).forEach((t, i) => {
+    const rw = 1 - i * 0.06;
+    if (S.prefs.dislike.includes(t)) { if (i < 5) blocked = true; pref -= 1.5 * rw; }
+    else if (S.prefs.like.includes(t)) { pref += 1 * rw; hits.push(t); }
+    else if (aff[t] && !GENERIC.has(t)) { pref += 0.55 * aff[t] * rw; if (aff[t] > 0.35) hits.push(t); }
+  });
+  if (blocked) return null;
+  const P = m?.tags?.length ? (Math.max(-1, Math.min(1, pref / 2.5)) + 1) / 2 : 0.4;
+  const Q = quality(m);
+  const h = hoursOf(m);
+  const D = durationFit(h);
+  if (TEMPS[S.temps].hi && h != null && D === 0) return null;
+  const fresh = g.playtime === 0 ? 1 : 0.85;
+  const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh;
+  return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q };
+}
+
+function ranked() {
+  const aff = affinity();
+  return S.games.map((g) => evaluate(g, aff)).filter(Boolean).sort((a, b) => b.score - a.score);
+}
+
+/* ---------------- réseau ---------------- */
+async function analyze(input) {
+  S.loading = true; S.error = null; render();
+  try {
+    const r = await fetch('/api/profile?u=' + encodeURIComponent(input));
+    const d = await r.json().catch(() => ({ message: 'Réponse inattendue du serveur.' }));
+    if (!r.ok) { S.error = d.message || 'Impossible de charger ce profil.'; return; }
+    S.profile = d; S.games = d.games;
+    const u = store(userKey()) || {};
+    S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.started = u.started ?? true;
+    S.hidden = new Set(); S.picked = null;
+    store('pos.last', input);
+    const url = new URL(location.href); url.searchParams.set('u', input); history.replaceState(null, '', url);
+    enrich();
+  } catch (e) {
+    S.error = 'Connexion impossible. Vérifie ta connexion internet et réessaie.';
+  } finally { S.loading = false; render(); }
+}
+
+let enrichRun = 0;
+async function enrich() {
+  const run = ++enrichRun;
+  const played = S.games.filter((g) => g.playtime >= STARTED_MAX).sort((a, b) => b.playtime - a.playtime).slice(0, 40);
+  const backlog = S.games.filter((g) => g.playtime < STARTED_MAX);
+  const order = [...played.slice(0, 15), ...backlog, ...played.slice(15)];
+  const queue = order.map((g) => g.appid).filter((id) => !S.meta[id]);
+  S.enrich = { done: 0, total: queue.length, paused: false };
+  renderProgress();
+  for (let i = 0; i < queue.length; i += 10) {
+    if (run !== enrichRun) return;
+    const ids = queue.slice(i, i + 10);
+    try {
+      const r = await fetch('/api/meta?ids=' + ids.join(','));
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      for (const id of ids) { const m = d.meta?.[id]; if (m) S.meta[id] = m; }
+      saveMeta();
+    } catch (e) {
+      S.enrich.paused = true; renderProgress(); return;
+    }
+    S.enrich.done = Math.min(queue.length, i + ids.length);
+    renderProgress(); renderResults();
+  }
+}
+
+/* ---------------- rendu ---------------- */
+function render() {
+  const app = $('#app');
+  $('#who').innerHTML = S.profile ? `${S.profile.avatar ? `<img src="${esc(S.profile.avatar)}" alt="">` : ''}<span>${esc(S.profile.persona || 'Profil Steam')}</span><button class="btn sm ghost" data-act="change">Changer de profil</button>` : '';
+  if (!S.profile) { app.innerHTML = heroHTML(); bindHero(); return; }
+  app.innerHTML = `
+    <section class="stats" id="stats"></section>
+    <section id="progress"></section>
+    <section class="panel">
+      <div class="ctrl">
+        <div>
+          <h3>Combien de temps devant toi ?</h3>
+          <div class="seg">${Object.entries(TEMPS).map(([k, t]) => `<button data-act="temps" data-v="${k}" class="${S.temps === k ? 'on' : ''}">${t.label}${t.hint ? `<small>${t.hint}</small>` : ''}</button>`).join('')}</div>
+        </div>
+        <div>
+          <h3>Seul ou à plusieurs ?</h3>
+          <div class="seg">${Object.entries(MODES).map(([k, v]) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${v}</button>`).join('')}</div>
+          <label class="chk"><input type="checkbox" id="started" data-act="started" ${S.started ? 'checked' : ''}> Inclure les jeux à peine commencés (moins de 2 h)</label>
+        </div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Tes goûts</h2>
+      <p class="sub">Devinés d'après les jeux où tu as passé le plus de temps. Clique sur un tag pour dire que tu en veux (♥), clique encore pour l'écarter (✕), une troisième fois pour revenir au neutre.</p>
+      <div class="tags" id="tags"></div>
+    </section>
+    <section>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <h2 style="margin:0;font-size:20px">À jouer ensuite</h2>
+        <button class="btn hot sm" data-act="dice">🎲 Laisse le hasard choisir</button>
+      </div>
+      <div class="recos" id="recos"></div>
+    </section>
+    <section class="panel"><details id="pile"><summary>Toute ta pile</summary><div id="pilebody" style="margin-top:12px"></div></details></section>`;
+  renderStats(); renderProgress(); renderResults();
+}
+
+function heroHTML() {
+  const last = store('pos.last') || '';
+  return `<section class="hero">
+    <h1>Trop de jeux, aucune idée de quoi lancer ? <em>On trie ta pile.</em></h1>
+    <p>Colle l'adresse de ton profil Steam. On analyse ta bibliothèque, on devine tes goûts d'après ce que tu as déjà dévoré, et on te propose le prochain jeu selon le temps que tu as devant toi.</p>
+    <form class="go" id="go">
+      <input id="u" name="u" type="text" inputmode="url" autocomplete="off" placeholder="https://steamcommunity.com/id/tonpseudo" value="${esc(last)}" aria-label="Adresse de ton profil Steam">
+      <button class="btn pri" ${S.loading ? 'disabled' : ''}>${S.loading ? 'Analyse…' : 'Analyser ma pile'}</button>
+    </form>
+    ${S.error ? `<p class="err" style="margin-top:12px">${esc(S.error)}</p>` : ''}
+    <p class="hint">Dans Steam : clic sur ton pseudo, puis <b>Profil</b>, puis clic droit et « Copier l'URL de la page ». Le profil doit avoir les <b>détails des jeux en public</b>.</p>
+    <div class="steps">
+      <div><b>1. Ton profil</b>Ta bibliothèque et ton temps de jeu, lus depuis Steam.</div>
+      <div><b>2. Tes goûts</b>Les genres de tes jeux les plus joués, que tu peux ajuster.</div>
+      <div><b>3. Ton prochain jeu</b>Choisi selon tes goûts, sa durée et ses avis.</div>
+    </div>
+  </section>`;
+}
+function bindHero() {
+  $('#go').addEventListener('submit', (e) => { e.preventDefault(); const v = $('#u').value.trim(); if (v) analyze(v); });
+}
+
+function renderStats() {
+  const el = $('#stats'); if (!el) return;
+  const n = S.games.length;
+  const never = S.games.filter((g) => !g.playtime).length;
+  const h = Math.round(S.games.reduce((a, g) => a + g.playtime, 0) / 60);
+  const done = Object.values(S.status).filter((s) => s === 'done').length;
+  el.innerHTML = `<div class="stat"><b>${n}</b><span>jeux possédés</span></div>
+    <div class="stat shame"><b>${never}</b><span>jamais lancés (${n ? Math.round(never / n * 100) : 0} %)</span></div>
+    <div class="stat"><b>${h.toLocaleString('fr')}</b><span>heures au compteur</span></div>
+    <div class="stat"><b>${done}</b><span>marqués finis ici</span></div>`;
+}
+
+function renderProgress() {
+  const el = $('#progress'); if (!el) return;
+  const { done, total, paused } = S.enrich;
+  if (!total || (done >= total && !paused)) { el.innerHTML = ''; return; }
+  el.innerHTML = paused
+    ? `<div class="err">L'analyse des jeux s'est interrompue (${done}/${total}). Les recos se basent sur ce qui est déjà analysé. <button class="btn sm" data-act="resume">Reprendre</button></div>`
+    : `<div class="progress"><span>Analyse des genres et durées : ${done}/${total}</span><div class="bar"><div style="width:${total ? done / total * 100 : 0}%"></div></div></div>`;
+}
+
+function renderTags() {
+  const el = $('#tags'); if (!el) return;
+  const aff = affinity();
+  const backlogCount = {};
+  for (const g of S.games) { if (g.playtime >= STARTED_MAX) continue; (S.meta[g.appid]?.tags || []).slice(0, 6).forEach((t) => { if (!GENERIC.has(t) && !NON_GAME.has(t)) backlogCount[t] = (backlogCount[t] || 0) + 1; }); }
+  const fromAff = Object.entries(aff).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([t]) => t);
+  const fromBacklog = Object.entries(backlogCount).sort((a, b) => b[1] - a[1]).map(([t]) => t).filter((t) => !fromAff.includes(t)).slice(0, 8);
+  const all = [...new Set([...S.prefs.like, ...S.prefs.dislike, ...fromAff, ...fromBacklog])];
+  if (!all.length) { el.innerHTML = '<span class="sub" style="margin:0">Les tags apparaissent au fil de l\'analyse…</span>'; return; }
+  el.innerHTML = all.map((t) => {
+    const cls = S.prefs.like.includes(t) ? 'like' : S.prefs.dislike.includes(t) ? 'dislike' : '';
+    const w = Math.round((aff[t] || 0) * 100);
+    return `<span class="tag ${cls}" data-act="tag" data-v="${esc(t)}" role="button" tabindex="0">${esc(t)}${!cls && w ? `<i style="--w:${w}%" title="Affinité ${w} %"></i>` : ''}</span>`;
+  }).join('');
+}
+
+function factsHTML(r) {
+  const f = [];
+  if (r.h != null) f.push(`<span class="pill">≈ ${fmtH(r.m.median)}</span>`); else f.push('<span class="pill">Durée inconnue</span>');
+  if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${p} % d'avis positifs</span>`); }
+  f.push(r.g.playtime ? `<span class="pill">Commencé : ${fmtH(r.g.playtime)}</span>` : '<span class="pill new">Jamais lancé</span>');
+  if (isCoop(r.m)) f.push('<span class="pill">Coop</span>');
+  return `<div class="facts">${f.join('')}</div>`;
+}
+function whyHTML(r) {
+  const parts = [];
+  if (r.hits.length) parts.push(`Dans tes cordes : <b>${r.hits.map(esc).join(', ')}</b>`);
+  else if (r.m?.tags?.length) parts.push(`Genre : ${r.m.tags.filter((t) => !GENERIC.has(t)).slice(0, 3).map(esc).join(', ')}`);
+  if (S.temps !== 'all' && r.h != null && durationFit(r.h) === 1) parts.push(`colle à ton créneau « ${TEMPS[S.temps].label.toLowerCase()} »`);
+  return parts.length ? `<div class="why">${parts.join(' · ')}</div>` : '';
+}
+function actsHTML(id, compact) {
+  return `<div class="acts">
+    ${compact ? '' : `<button class="btn sm pri" data-act="go" data-id="${id}">C'est parti</button>`}
+    <button class="btn sm" data-act="later" data-id="${id}">Pas ce soir</button>
+    <button class="btn sm" data-act="done" data-id="${id}">Déjà fini</button>
+    <button class="btn sm ghost" data-act="skip" data-id="${id}">Pas intéressé</button>
+  </div>`;
+}
+
+let lastRanked = [];
+function renderResults() {
+  renderTags(); renderStats();
+  const el = $('#recos'); if (!el) return;
+  lastRanked = ranked();
+  let top = lastRanked.slice(0, 3);
+  if (S.picked) { const p = lastRanked.find((r) => r.g.appid === S.picked); if (p) top = [p, ...top.filter((r) => r !== p)].slice(0, 3); }
+  if (!top.length) {
+    const analysing = S.enrich.done < S.enrich.total && !S.enrich.paused;
+    el.innerHTML = `<div class="panel empty" style="grid-column:1/-1">${analysing ? 'Analyse en cours, les premières idées arrivent…' : 'Aucun jeu ne correspond à ces critères. Élargis le temps disponible ou le mode de jeu.'}</div>`;
+  } else {
+    el.innerHTML = top.map((r, i) => `<article class="card ${r.g.appid === S.picked ? 'pick' : ''}">${cover(r.g)}<div class="cbody">
+      <div class="rank">${r.g.appid === S.picked ? 'Tiré au sort' : ['Notre choix', 'Plan B', 'Plan C'][i]}</div>
+      <div class="title">${esc(r.g.name)}</div>${factsHTML(r)}${whyHTML(r)}
+      <div style="font-size:12px"><a href="steam://run/${r.g.appid}">▶ Lancer dans Steam</a> · <a href="https://store.steampowered.com/app/${r.g.appid}" target="_blank" rel="noopener">Page Steam</a> · <a href="https://howlongtobeat.com/?q=${encodeURIComponent(r.g.name)}" target="_blank" rel="noopener">HowLongToBeat</a></div>
+      ${actsHTML(r.g.appid)}</div></article>`).join('');
+  }
+  if ($('#pile')?.open) renderPile();
+}
+
+function renderPile() {
+  const body = $('#pilebody'); if (!body) return;
+  if (!body.dataset.ready) {
+    body.innerHTML = `<div class="toolbar"><input type="search" id="pq" placeholder="Rechercher dans ta pile…" value="${esc(S.q)}">
+      <select id="psort"><option value="score">Trier : pertinence</option><option value="short">Trier : plus courts d'abord</option><option value="name">Trier : nom</option></select></div><div class="list" id="plist"></div>`;
+    body.dataset.ready = '1';
+    $('#pq').addEventListener('input', (e) => { S.q = e.target.value.trim().toLowerCase(); renderPileList(); });
+    $('#psort').value = S.sort;
+    $('#psort').addEventListener('change', (e) => { S.sort = e.target.value; renderPileList(); });
+  }
+  renderPileList();
+}
+function renderPileList() {
+  let l = lastRanked.filter((r) => !S.q || r.g.name.toLowerCase().includes(S.q));
+  if (S.sort === 'short') l = [...l].sort((a, b) => (a.h ?? 999) - (b.h ?? 999));
+  if (S.sort === 'name') l = [...l].sort((a, b) => a.g.name.localeCompare(b.g.name, 'fr'));
+  const shown = l.slice(0, 200);
+  $('#plist').innerHTML = shown.length ? shown.map((r) => `<div class="li">${cover(r.g)}<div class="nm">${esc(r.g.name)}<small>${r.h != null ? '≈ ' + fmtH(r.m.median) : 'Durée inconnue'}${r.hits.length ? ' · ' + r.hits.map(esc).join(', ') : ''}</small></div>${actsHTML(r.g.appid, true).replace('<div class="acts">', '<div class="acts"><button class="btn sm" data-act="pickthis" data-id="' + r.g.appid + '">Choisir</button>')}</div>`).join('')
+    + (l.length > 200 ? `<p class="sub" style="margin-top:10px">${l.length - 200} autres jeux. Affine ta recherche pour les voir.</p>` : '')
+    : '<p class="empty">Rien dans ta pile ne correspond.</p>';
+}
+
+/* ---------------- actions ---------------- */
+function setStatus(id, s, msg) { S.status[id] = s; if (S.picked === id) S.picked = null; saveUser(); toast(msg); renderResults(); }
+function weightedPick(list) { const pool = list.slice(0, 15); const w = pool.map((r) => r.score ** 3); const t = w.reduce((a, b) => a + b, 0); let x = Math.random() * t; for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return pool[i]; } return pool[0]; }
+
+const ACTIONS = {
+  change: () => { enrichRun++; S.profile = null; S.games = []; S.error = null; history.replaceState(null, '', location.pathname); render(); },
+  temps: (t) => { S.temps = t.dataset.v; S.picked = null; saveUser(); render(); },
+  mode: (t) => { S.mode = t.dataset.v; S.picked = null; saveUser(); render(); },
+  tag: (t) => {
+    const v = t.dataset.v; const p = S.prefs;
+    if (p.like.includes(v)) { p.like = p.like.filter((x) => x !== v); p.dislike.push(v); }
+    else if (p.dislike.includes(v)) { p.dislike = p.dislike.filter((x) => x !== v); }
+    else p.like.push(v);
+    S.picked = null; saveUser(); renderResults();
+  },
+  dice: () => { const r = weightedPick(lastRanked.filter((x) => x.g.appid !== S.picked)); if (!r) { toast('Aucun jeu ne correspond à ces critères'); return; } S.picked = r.g.appid; renderResults(); $('#recos').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  go: (t) => { const id = +t.dataset.id; const g = S.games.find((x) => x.appid === id); setStatus(id, 'playing', `Bon jeu sur ${g?.name || 'ce jeu'} ! Il sort des recos.`); },
+  later: (t) => { const id = +t.dataset.id; S.hidden.add(id); if (S.picked === id) S.picked = null; toast('Mis de côté pour ce soir'); renderResults(); },
+  done: (t) => setStatus(+t.dataset.id, 'done', 'Bien joué ! Marqué comme fini.'),
+  skip: (t) => setStatus(+t.dataset.id, 'skip', "C'est noté, on ne te le proposera plus."),
+  pickthis: (t) => { S.picked = +t.dataset.id; renderResults(); $('#recos').scrollIntoView({ behavior: 'smooth', block: 'start' }); },
+  resume: () => enrich(),
+};
+document.addEventListener('click', (e) => { const t = e.target.closest('[data-act]'); if (!t || t.tagName === 'INPUT') return; const f = ACTIONS[t.dataset.act]; if (f) f(t, e); });
+document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.tag')) { e.preventDefault(); ACTIONS.tag(e.target); } });
+document.addEventListener('change', (e) => { if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); } });
+document.addEventListener('toggle', (e) => { if (e.target.id === 'pile' && e.target.open) renderPile(); }, true);
+
+/* ---------------- démarrage ---------------- */
+render();
+const initial = new URLSearchParams(location.search).get('u');
+if (initial) analyze(initial);
+</script>
+</body>
+</html>
