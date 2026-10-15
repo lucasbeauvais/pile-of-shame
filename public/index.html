@@ -747,14 +747,14 @@ function render() {
         <div>
           <h3>${t('crit.time')}</h3>
           <div class="seg">${Object.entries(TEMPS).map(([k, o]) => `<button data-act="temps" data-v="${k}" class="${S.temps === k ? 'on' : ''}">${t('temps.' + k)}${o.hint ? `<small>${o.hint}</small>` : ''}</button>`).join('')}</div>
+          <h3 style="margin-top:16px">${t('crit.device')}</h3>
+          <div class="seg">${DEVICES.map((k) => `<button data-act="device" data-v="${k}" class="${S.device === k ? 'on' : ''}">${t('device.' + k)}</button>`).join('')}</div>
         </div>
         <div>
           <h3>${t('crit.mode')}</h3>
           <div class="seg">${MODES.map((k) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${t('mode.' + k)}</button>`).join('')}</div>
           <h3 style="margin-top:16px">${t('crit.mood')}</h3>
           <div class="seg">${Object.keys(MOODS).map((k) => `<button data-act="mood" data-v="${k}" class="${S.mood === k ? 'on' : ''}">${t('mood.' + k)}</button>`).join('')}</div>
-          <h3 style="margin-top:16px">${t('crit.device')}</h3>
-          <div class="seg">${DEVICES.map((k) => `<button data-act="device" data-v="${k}" class="${S.device === k ? 'on' : ''}">${t('device.' + k)}</button>`).join('')}</div>
         </div>
       </div>
       <div class="incl">
