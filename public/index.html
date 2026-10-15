@@ -242,6 +242,31 @@ const TEMPS = {
 };
 const MODES = ['all', 'solo', 'coop'];
 const DEVICES = ['all', 'kbm', 'pad', 'deck'];
+// Envie du moment, devinée depuis les tags Steam. pos : tags qui comptent pour (dans les 10 premiers du jeu) ;
+// neg : tags qui excluent le jeu s'ils sont dans ses 6 premiers.
+const MOODS = {
+  all: null,
+  chill: {
+    pos: ['Relaxing', 'Cozy', 'Wholesome', 'Cute', 'Farming Sim', 'Life Sim', 'Walking Simulator', 'Atmospheric', 'Beautiful', 'Colorful', 'Hidden Object', 'City Builder', 'Exploration', 'Nature', 'Fishing', 'Family Friendly', 'Casual'],
+    neg: ['Difficult', 'Souls-like', 'Horror', 'Psychological Horror', 'Survival Horror', 'PvP', 'Competitive', 'Gore', 'Violent', 'Bullet Hell', 'Precision Platformer', 'Battle Royale'],
+  },
+  casual: {
+    pos: ['Casual', 'Arcade', 'Party Game', 'Puzzle', 'Family Friendly', 'Short', 'Local Multiplayer', 'Hidden Object', 'Clicker', 'Idler', 'Match 3', 'Party', 'Minigames', 'Funny', 'Comedy', 'Point & Click', 'Cute', 'Board Game', 'Card Game', 'Trivia'],
+    neg: ['Difficult', 'Souls-like', 'Grand Strategy', 'Bullet Hell', 'Permadeath', 'Precision Platformer'],
+  },
+  hardcore: {
+    pos: ['Difficult', 'Souls-like', 'Precision Platformer', 'Permadeath', 'Bullet Hell', 'Roguelike', 'Grand Strategy', 'Tactical', 'Realistic', 'Boss Rush', 'Immersive Sim'],
+    neg: ['Casual', 'Relaxing', 'Cozy', 'Wholesome', 'Family Friendly', 'Cute'],
+  },
+  compet: {
+    pos: ['PvP', 'Competitive', 'eSports', 'Battle Royale', 'MOBA', 'Fighting', '2D Fighter', '3D Fighter', 'Arena Shooter', 'Team-Based', 'Hero Shooter', 'Racing', 'Sports'],
+    neg: ['Story Rich', 'Walking Simulator', 'Visual Novel', 'Relaxing', 'Cozy'],
+  },
+  loop: {
+    pos: ['Roguelike', 'Roguelite', 'Action Roguelike', 'Roguelike Deckbuilder', 'Deckbuilding', 'Clicker', 'Idler', 'Incremental', 'Looter Shooter', 'Loot', 'Automation', 'Survival', 'Crafting', 'Base Building', 'Farming Sim', 'Procedural Generation', 'Replay Value', 'Sandbox', 'Colony Sim', 'Management'],
+    neg: ['Linear', 'Visual Novel', 'Walking Simulator', 'Point & Click'],
+  },
+};
 const COOP_TAGS = ['Co-op', 'Online Co-Op', 'Local Co-Op', 'Local Multiplayer', 'Split Screen'];
 const NON_GAME = new Set(['Utilities', 'Software', 'Design & Illustration', 'Video Production', 'Audio Production', 'Animation & Modeling', 'Web Publishing', 'Photo Editing', 'Game Development', 'Software Training', 'Benchmark']);
 const GENERIC = new Set(['Singleplayer', 'Multiplayer', 'Great Soundtrack', 'Early Access', 'Free to Play', 'Controller', 'Full controller support', 'Indie', 'Casual', 'Atmospheric', 'Beautiful', 'Classic', 'Masterpiece', 'Addictive', 'Fun', 'Good Soundtrack', 'Steam Achievements']);
@@ -286,6 +311,8 @@ const I18N = {
     'incl.playedT': 'Les jeux auxquels tu joues déjà', 'incl.played': 'Plus de 2 h de jeu : de quoi reprendre une partie en cours.',
     'temps.all': 'Peu importe', 'temps.soiree': 'Une soirée', 'temps.soirees': 'Quelques soirées', 'temps.gros': 'Un gros morceau', 'temps.monde': 'Un monde où vivre',
     'mode.all': 'Peu importe', 'mode.solo': 'Solo', 'mode.coop': 'Coop / à plusieurs',
+    'crit.mood': 'Tu as envie de quoi ?', 'mood.all': 'Peu importe', 'mood.chill': '😌 Chill', 'mood.casual': '🍿 Casual', 'mood.hardcore': '💀 Hardcore', 'mood.compet': '🏆 Compétitif', 'mood.loop': '🔁 Répétitif',
+    'why.mood': '{m} : {t}',
     'crit.device': 'Comment tu joues ?', 'device.all': 'Peu importe', 'device.kbm': '⌨️ Clavier-souris', 'device.pad': '🎮 Manette', 'device.deck': 'Steam Deck',
     'fact.pad.full': '🎮 Manette : prise en charge complète', 'fact.pad.partial': '🎮 Manette : partielle', 'fact.pad.unknown': '🎮 Manette : non précisé',
     'fact.deck.3': 'Steam Deck : vérifié', 'fact.deck.2': 'Steam Deck : jouable', 'fact.deck.unknown': 'Steam Deck : non testé',
@@ -354,6 +381,8 @@ const I18N = {
     'incl.playedT': 'Games you are already playing', 'incl.played': 'Over 2 h played: pick up where you left off.',
     'temps.all': 'Any', 'temps.soiree': 'One evening', 'temps.soirees': 'A few evenings', 'temps.gros': 'A big chunk', 'temps.monde': 'A world to live in',
     'mode.all': 'Any', 'mode.solo': 'Solo', 'mode.coop': 'Co-op / with friends',
+    'crit.mood': 'What are you in the mood for?', 'mood.all': 'Any', 'mood.chill': '😌 Chill', 'mood.casual': '🍿 Casual', 'mood.hardcore': '💀 Hardcore', 'mood.compet': '🏆 Competitive', 'mood.loop': '🔁 Grindy',
+    'why.mood': '{m}: {t}',
     'crit.device': 'How do you play?', 'device.all': 'Any', 'device.kbm': '⌨️ Mouse & keyboard', 'device.pad': '🎮 Controller', 'device.deck': 'Steam Deck',
     'fact.pad.full': '🎮 Full controller support', 'fact.pad.partial': '🎮 Partial controller support', 'fact.pad.unknown': '🎮 Controller: not stated',
     'fact.deck.3': 'Steam Deck: verified', 'fact.deck.2': 'Steam Deck: playable', 'fact.deck.unknown': 'Steam Deck: untested',
@@ -425,7 +454,7 @@ function applyLang() {
 const S = {
   profile: null, games: [], meta: store('pos.meta') || {}, ttb: store('pos.ttb') || {},
   status: {}, prefs: { like: [], dislike: [] },
-  temps: 'all', mode: 'all', device: 'all', started: true, played: false,
+  temps: 'all', mode: 'all', device: 'all', mood: 'all', started: true, played: false,
   hidden: new Set(), picks: [],
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score', view: 'reco',
@@ -433,7 +462,7 @@ const S = {
   live: { players: {}, chart: {}, asked: new Set(), busy: false },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
-function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, device: S.device, started: S.started, played: S.played, duel: S.duel }); }
+function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, device: S.device, mood: S.mood, started: S.started, played: S.played, duel: S.duel }); }
 let metaSaveT;
 function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => { store('pos.meta', S.meta); store('pos.ttb', S.ttb); }, 400); }
 
@@ -468,6 +497,18 @@ function deviceFit(m) {
     return d === 3 ? 1 : d === 2 ? 0.9 : 0.75;
   }
   return 1;
+}
+// Envie du moment : null = le jeu ne colle pas ; sinon { f: facteur de score, tags: tags qui collent }.
+function moodFit(m) {
+  const md = MOODS[S.mood];
+  if (!md) return { f: 1, tags: [] };
+  const tags = m?.tags || [];
+  if (!tags.length) return null;
+  if (tags.slice(0, 6).some((x) => md.neg.includes(x))) return null;
+  let w = 0; const hit = [];
+  tags.slice(0, 10).forEach((x, i) => { if (md.pos.includes(x)) { w += 1 - i * 0.07; hit.push(x); } });
+  if (!hit.length) return null;
+  return { f: 0.9 + 0.1 * Math.min(w, 2), tags: hit.slice(0, 3) };
 }
 function isNonGame(m) { return !!m?.tags?.slice(0, 5).some((t) => NON_GAME.has(t)); }
 
@@ -508,6 +549,8 @@ function evaluate(g, aff) {
   if (S.mode === 'solo' && isMultiOnly(m)) return null;
   const dev = deviceFit(m);
   if (dev == null) return null;
+  const mood = moodFit(m);
+  if (mood == null) return null;
 
   let pref = 0; const hits = []; let blocked = false;
   (m?.tags || []).slice(0, 10).forEach((t, i) => {
@@ -527,8 +570,8 @@ function evaluate(g, aff) {
   if (TEMPS[S.temps].hi && D === 0) return null;
   const fresh = g.playtime === 0 ? 1 : 0.85;
   const duel = 1 + 0.3 * Math.tanh((S.duel[g.appid]?.r || 0) / 100); // tes duels : jusqu'à ±30 %
-  const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh * duel * dev;
-  return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q, going, left };
+  const score = (TEMPS[S.temps].hi ? 0.45 * P + 0.22 * Q + 0.33 * D : 0.62 * P + 0.38 * Q) * fresh * duel * dev * mood.f;
+  return { g, m, score, hits: [...new Set(hits)].slice(0, 3), h, Q, going, left, moodTags: mood.tags };
 }
 
 function ranked() {
@@ -572,7 +615,7 @@ async function analyze(input) {
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
-    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.device = DEVICES.includes(u.device) ? u.device : 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.vs = { round: 0, elim: [], pair: null, result: null }; S.view = 'reco';
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.device = DEVICES.includes(u.device) ? u.device : 'all'; S.mood = u.mood in MOODS ? u.mood : 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.vs = { round: 0, elim: [], pair: null, result: null }; S.view = 'reco';
     S.hidden = new Set(); S.picks = [];
     S.live = { players: {}, chart: {}, asked: new Set(), busy: false };
     store('pos.last', input);
@@ -690,6 +733,8 @@ function render() {
         <div>
           <h3>${t('crit.mode')}</h3>
           <div class="seg">${MODES.map((k) => `<button data-act="mode" data-v="${k}" class="${S.mode === k ? 'on' : ''}">${t('mode.' + k)}</button>`).join('')}</div>
+          <h3 style="margin-top:16px">${t('crit.mood')}</h3>
+          <div class="seg">${Object.keys(MOODS).map((k) => `<button data-act="mood" data-v="${k}" class="${S.mood === k ? 'on' : ''}">${t('mood.' + k)}</button>`).join('')}</div>
           <h3 style="margin-top:16px">${t('crit.device')}</h3>
           <div class="seg">${DEVICES.map((k) => `<button data-act="device" data-v="${k}" class="${S.device === k ? 'on' : ''}">${t('device.' + k)}</button>`).join('')}</div>
         </div>
@@ -854,6 +899,7 @@ function whyHTML(r) {
   const parts = [];
   if (r.hits.length) parts.push(t('why.hits', { t: r.hits.map(esc).join(', ') }));
   else if (r.m?.tags?.length) parts.push(t('why.genre', { t: r.m.tags.filter((x) => !GENERIC.has(x)).slice(0, 3).map(esc).join(', ') }));
+  if (r.moodTags?.length) parts.push(t('why.mood', { m: t('mood.' + S.mood), t: r.moodTags.map(esc).join(', ') }));
   if (r.going) parts.push(t('why.going') + (r.left > 0 ? t('why.left', { h: fmtH(r.left * 60) }) : ''));
   if (S.temps !== 'all' && r.h != null && !r.going && durationFit(r.h) === 1) parts.push(t('why.slot', { s: t('temps.' + S.temps).toLowerCase() }));
   return parts.length ? `<div class="why">${parts.join(' · ')}</div>` : '';
@@ -1049,6 +1095,7 @@ const ACTIONS = {
   temps: (el) => { S.temps = el.dataset.v; S.picks = []; saveUser(); render(); },
   mode: (el) => { S.mode = el.dataset.v; S.picks = []; saveUser(); render(); },
   device: (el) => { S.device = el.dataset.v; S.picks = []; saveUser(); render(); },
+  mood: (el) => { S.mood = el.dataset.v; S.picks = []; saveUser(); render(); },
   tag: (el) => {
     const v = el.dataset.v; const p = S.prefs;
     if (p.like.includes(v)) { p.like = p.like.filter((x) => x !== v); p.dislike.push(v); }
