@@ -54,7 +54,7 @@ export function normalizeSpy(d) {
     pos: Number(d.positive) || 0,
     neg: Number(d.negative) || 0,
     ccu: Number(d.ccu) || 0,                 // pic de joueurs simultanés la veille, sert de point de comparaison
-    ctrl: null, deck: null, v: 2,            // SteamSpy ne dit rien de la manette ni du Steam Deck
+    ctrl: null, deck: null, age: null, mature: false, v: 3, // SteamSpy ne dit rien de la manette, du Steam Deck ni de l'âge
   };
 }
 
@@ -170,6 +170,25 @@ export function controllerOf(item, allTags) {
   return cats ? 'none' : null;
 }
 
+// Âge minimum d'un jeu : PEGI d'abord, puis ESRB, puis USK. null si aucune classification connue.
+// Accepte les classifications en liste ({rating_system, rating}) ou en objet ({pegi: {rating}}).
+const ESRB_AGE = { ec: 3, e: 3, e10: 10, 'e10+': 10, t: 13, m: 17, ao: 18 };
+export function ageOf(item) {
+  const raw = item.ratings;
+  const list = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.entries(raw).map(([k, v]) => ({ rating_system: k, ...(v || {}) })) : [];
+  const find = (sys) => list.find((r) => String(r.rating_system || r.system || '').toLowerCase() === sys)?.rating;
+  const num = (v) => { const n = parseInt(String(v ?? '').replace(/\D/g, ''), 10); return Number.isFinite(n) ? n : null; };
+  const pegi = num(find('pegi'));
+  if (pegi != null) return pegi;
+  const esrb = String(find('esrb') ?? '').toLowerCase().replace(/\s/g, '');
+  if (esrb && ESRB_AGE[esrb] != null) return ESRB_AGE[esrb];
+  const usk = num(find('usk'));
+  if (usk != null) return usk;
+  const req = num(item.basic_info?.required_age ?? item.required_age);
+  return req ? req : null;
+}
+const MATURE_DESCRIPTORS = [1, 2, 3, 4]; // nudité, violence ou gore fréquents, contenu sexuel, nudité fréquente
+
 // Réduit une fiche IStoreBrowseService/GetItems au même format que SteamSpy (tags triés, avis),
 // plus la manette (ctrl) et la compatibilité Steam Deck (deck : 3 vérifié, 2 jouable, 1 non pris en charge, 0 inconnu).
 export function normalizeStoreItem(item, names) {
@@ -184,7 +203,8 @@ export function normalizeStoreItem(item, names) {
   if (!tags.length && !count) return null;
   const deckRaw = item.platforms?.steam_deck_compat_category;
   const deck = deckRaw == null ? null : Number(deckRaw);
-  return { tags, median: 0, average: 0, pos, neg: count - pos, ccu: 0, ctrl: controllerOf(item, allTags), deck: Number.isInteger(deck) ? deck : null, v: 2 };
+  const mature = (item.content_descriptorids || []).map(Number).some((d) => MATURE_DESCRIPTORS.includes(d));
+  return { tags, median: 0, average: 0, pos, neg: count - pos, ccu: 0, ctrl: controllerOf(item, allTags), deck: Number.isInteger(deck) ? deck : null, age: ageOf(item), mature, v: 3 };
 }
 
 // Genres et avis de tout un lot en une requête Steam.
@@ -194,7 +214,7 @@ async function storeItems(ids, env, ctx) {
   const input = {
     ids: ids.map((appid) => ({ appid })),
     context: { language: 'english', country_code: 'US', steam_realm: 1 },
-    data_request: { include_tag_count: 20, include_reviews: true, include_platforms: true, include_basic_info: true },
+    data_request: { include_tag_count: 20, include_reviews: true, include_platforms: true, include_basic_info: true, include_ratings: true },
   };
   const d = await getJSON(`${STEAM}/IStoreBrowseService/GetItems/v1/?key=${env.STEAM_API_KEY}&input_json=${encodeURIComponent(JSON.stringify(input))}`);
   const out = {};

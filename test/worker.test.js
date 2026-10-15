@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb, siteFromStore, normalizeStoreItem } from '../src/worker.js';
+import worker, { parseProfile, normalizeSpy, normalizeCharts, normalizeTtb, siteFromStore, normalizeStoreItem, ageOf } from '../src/worker.js';
 
 test('parseProfile reconnaît les formats courants', () => {
   assert.deepEqual(parseProfile('https://steamcommunity.com/profiles/76561197960287930/'), { steamid: '76561197960287930' });
@@ -76,7 +76,7 @@ test('pseudo inconnu → 404', async () => {
 test('normalizeStoreItem : tags par poids, avis convertis', () => {
   const names = { 1: 'RPG', 2: 'Co-op', 3: 'Indie' };
   const m = normalizeStoreItem({ appid: 10, success: 1, tags: [{ tagid: 3, weight: 10 }, { tagid: 1, weight: 90 }, { tagid: 2, weight: 50 }, { tagid: 99, weight: 5 }], reviews: { summary_filtered: { review_count: 200, percent_positive: 90 } } }, names);
-  assert.deepEqual(m, { tags: ['RPG', 'Co-op', 'Indie'], median: 0, average: 0, pos: 180, neg: 20, ccu: 0, ctrl: null, deck: null, v: 2 });
+  assert.deepEqual(m, { tags: ['RPG', 'Co-op', 'Indie'], median: 0, average: 0, pos: 180, neg: 20, ccu: 0, ctrl: null, deck: null, age: null, mature: false, v: 3 });
   assert.deepEqual(normalizeStoreItem({ appid: 11, tagids: [2, 1] }, names).tags, ['Co-op', 'RPG']);
   assert.equal(normalizeStoreItem({ appid: 12, success: 2 }, names), null);
   assert.equal(normalizeStoreItem({ appid: 13 }, names), null);
@@ -226,4 +226,20 @@ test('meta : demande plateformes et infos de base à Steam', async () => {
   const input = JSON.parse(decodeURIComponent(calls.find((c) => c.includes('GetItems')).split('input_json=')[1]));
   assert.equal(input.data_request.include_platforms, true);
   assert.equal(input.data_request.include_basic_info, true);
+});
+
+test('ageOf : PEGI, puis ESRB, puis USK', () => {
+  assert.equal(ageOf({ ratings: [{ rating_system: 'PEGI', rating: '7' }, { rating_system: 'esrb', rating: 'm' }] }), 7);
+  assert.equal(ageOf({ ratings: [{ rating_system: 'esrb', rating: 'E10+' }] }), 10);
+  assert.equal(ageOf({ ratings: [{ rating_system: 'esrb', rating: 't' }] }), 13);
+  assert.equal(ageOf({ ratings: { usk: { rating: '16' } } }), 16);
+  assert.equal(ageOf({ ratings: { pegi: { rating: '3' } } }), 3);
+  assert.equal(ageOf({}), null);
+});
+
+test('normalizeStoreItem : âge et contenu adulte', () => {
+  const base = { appid: 1, success: 1, reviews: { summary_filtered: { review_count: 10, percent_positive: 50 } } };
+  const kid = normalizeStoreItem({ ...base, ratings: [{ rating_system: 'pegi', rating: '3' }] }, {});
+  assert.equal(kid.age, 3); assert.equal(kid.mature, false); assert.equal(kid.v, 3);
+  assert.equal(normalizeStoreItem({ ...base, content_descriptorids: [2, 5] }, {}).mature, true);
 });

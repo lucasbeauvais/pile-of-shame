@@ -139,7 +139,8 @@ button.stat::after{content:attr(data-see);display:block;font-size:11px;color:var
 .seg button small{color:var(--mute);margin-left:4px}
 .seg button.on{border-color:var(--acc);background:#1b3348}
 .incl{margin-top:18px}
-.incl .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.incl .opts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:860px){.incl .opts{grid-template-columns:1fr 1fr}}
 .chk{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);cursor:pointer;font-size:15px}
 .chk input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--acc);cursor:pointer}
 .chk b{display:block;font-weight:650}
@@ -242,6 +243,9 @@ const TEMPS = {
 };
 const MODES = ['all', 'solo', 'coop'];
 const DEVICES = ['all', 'kbm', 'pad', 'deck'];
+const META_V = 3;       // version des fiches de jeu : 2 = manette + Steam Deck, 3 = âge (PEGI…)
+const KID_MAX_AGE = 10; // kid friendly : rien au-dessus de PEGI 10
+const KID_BAD_TAGS = ['Gore', 'Violent', 'Sexual Content', 'Nudity', 'Horror', 'Psychological Horror', 'Survival Horror', 'Mature', 'NSFW', 'Hentai', 'Blood'];
 // Envie du moment, devinée depuis les tags Steam. pos : tags qui comptent pour (dans les 10 premiers du jeu) ;
 // neg : tags qui excluent le jeu s'ils sont dans ses 6 premiers.
 const MOODS = {
@@ -308,6 +312,8 @@ const I18N = {
     'who.default': 'Profil Steam', 'who.change': 'Changer de profil',
     'crit.time': 'Combien de temps devant toi ?', 'crit.mode': 'Seul ou à plusieurs ?', 'crit.incl': 'Quels jeux inclure ?', 'crit.change': '⚙️ Changer les critères',
     'incl.startedT': 'Les jeux à peine commencés', 'incl.started': 'Lancés mais joués moins de 2 h : tu les as à peine entamés.',
+    'incl.kidsT': '🧒 Kid friendly', 'incl.kids': "Rien au-dessus de PEGI 10. Sans classification connue, seulement les jeux « Family Friendly ».",
+    'fact.kidAge': '🧒 {a} ans et +', 'fact.kidFF': '🧒 Family Friendly',
     'incl.playedT': 'Les jeux auxquels tu joues déjà', 'incl.played': 'Plus de 2 h de jeu : de quoi reprendre une partie en cours.',
     'temps.all': 'Peu importe', 'temps.soiree': 'Une soirée', 'temps.soirees': 'Quelques soirées', 'temps.gros': 'Un gros morceau', 'temps.monde': 'Un monde où vivre',
     'mode.all': 'Peu importe', 'mode.solo': 'Solo', 'mode.coop': 'Coop / à plusieurs',
@@ -378,6 +384,8 @@ const I18N = {
     'who.default': 'Steam profile', 'who.change': 'Change profile',
     'crit.time': 'How much time do you have?', 'crit.mode': 'Alone or with friends?', 'crit.incl': 'Which games to include?', 'crit.change': '⚙️ Change filters',
     'incl.startedT': 'Barely started games', 'incl.started': 'Launched but played under 2 h: you have barely scratched them.',
+    'incl.kidsT': '🧒 Kid friendly', 'incl.kids': 'Nothing above PEGI 10. With no known rating, only "Family Friendly" games.',
+    'fact.kidAge': '🧒 Ages {a}+', 'fact.kidFF': '🧒 Family Friendly',
     'incl.playedT': 'Games you are already playing', 'incl.played': 'Over 2 h played: pick up where you left off.',
     'temps.all': 'Any', 'temps.soiree': 'One evening', 'temps.soirees': 'A few evenings', 'temps.gros': 'A big chunk', 'temps.monde': 'A world to live in',
     'mode.all': 'Any', 'mode.solo': 'Solo', 'mode.coop': 'Co-op / with friends',
@@ -454,7 +462,7 @@ function applyLang() {
 const S = {
   profile: null, games: [], meta: store('pos.meta') || {}, ttb: store('pos.ttb') || {},
   status: {}, prefs: { like: [], dislike: [] },
-  temps: 'all', mode: 'all', device: 'all', mood: 'all', started: true, played: false,
+  temps: 'all', mode: 'all', device: 'all', mood: 'all', started: true, played: false, kids: false,
   hidden: new Set(), picks: [],
   loading: false, error: null, enrich: { done: 0, total: 0, paused: false },
   q: '', sort: 'score', view: 'reco',
@@ -462,7 +470,7 @@ const S = {
   live: { players: {}, chart: {}, asked: new Set(), busy: false },
 };
 function userKey() { return 'pos.u.' + S.profile.steamid; }
-function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, device: S.device, mood: S.mood, started: S.started, played: S.played, duel: S.duel }); }
+function saveUser() { store(userKey(), { status: S.status, prefs: S.prefs, temps: S.temps, mode: S.mode, device: S.device, mood: S.mood, started: S.started, played: S.played, kids: S.kids, duel: S.duel }); }
 let metaSaveT;
 function saveMeta() { clearTimeout(metaSaveT); metaSaveT = setTimeout(() => { store('pos.meta', S.meta); store('pos.ttb', S.ttb); }, 400); }
 
@@ -510,6 +518,15 @@ function moodFit(m) {
   if (!hit.length) return null;
   return { f: 0.9 + 0.1 * Math.min(w, 2), tags: hit.slice(0, 3) };
 }
+// Kid friendly : classé PEGI 10 maximum (ou équivalent), sans contenu adulte signalé par Steam ni tag adulte.
+// Sans classification connue, seulement les jeux tagués « Family Friendly ».
+function kidOk(m) {
+  if (!S.kids) return true;
+  if (!m || m.mature) return false;
+  if ((m.tags || []).some((x) => KID_BAD_TAGS.includes(x))) return false;
+  if (m.age != null) return m.age <= KID_MAX_AGE;
+  return (m.tags || []).includes('Family Friendly');
+}
 function isNonGame(m) { return !!m?.tags?.slice(0, 5).some((t) => NON_GAME.has(t)); }
 
 function affinity() {
@@ -551,6 +568,7 @@ function evaluate(g, aff) {
   if (dev == null) return null;
   const mood = moodFit(m);
   if (mood == null) return null;
+  if (!kidOk(m)) return null;
 
   let pref = 0; const hits = []; let blocked = false;
   (m?.tags || []).slice(0, 10).forEach((t, i) => {
@@ -615,7 +633,7 @@ async function analyze(input) {
     S.profile = d; S.games = d.games;
     const u = store(userKey()) || {};
     S.status = u.status || {}; S.prefs = u.prefs || { like: [], dislike: [] };
-    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.device = DEVICES.includes(u.device) ? u.device : 'all'; S.mood = u.mood in MOODS ? u.mood : 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.duel = u.duel || {}; S.vs = { round: 0, elim: [], pair: null, result: null }; S.view = 'reco';
+    S.temps = u.temps || 'all'; S.mode = u.mode || 'all'; S.device = DEVICES.includes(u.device) ? u.device : 'all'; S.mood = u.mood in MOODS ? u.mood : 'all'; S.started = u.started ?? true; S.played = u.played ?? false; S.kids = u.kids ?? false; S.duel = u.duel || {}; S.vs = { round: 0, elim: [], pair: null, result: null }; S.view = 'reco';
     S.hidden = new Set(); S.picks = [];
     S.live = { players: {}, chart: {}, asked: new Set(), busy: false };
     store('pos.last', input);
@@ -632,8 +650,8 @@ async function enrich() {
   const played = S.games.filter((g) => g.playtime >= STARTED_MAX).sort((a, b) => b.playtime - a.playtime).slice(0, 40);
   const backlog = S.games.filter((g) => g.playtime < STARTED_MAX);
   const order = [...played.slice(0, 15), ...backlog, ...played.slice(15)];
-  // v < 2 : analysé avant l'ajout de la manette et du Steam Deck, on le redemande une fois.
-  const queue = order.map((g) => g.appid).filter((id) => !S.meta[id] || !S.meta[id].v);
+  // Fiche plus ancienne que META_V (avant manette / Steam Deck / âge) : on la redemande une fois.
+  const queue = order.map((g) => g.appid).filter((id) => !S.meta[id] || (S.meta[id].v || 0) < META_V);
   S.enrich = { done: 0, total: queue.length, paused: false };
   renderProgress();
   loadChart();
@@ -744,6 +762,7 @@ function render() {
         <div class="opts">
           <label class="chk"><input type="checkbox" id="started" ${S.started ? 'checked' : ''}><span><b>${t('incl.startedT')}</b><small>${t('incl.started')}</small></span></label>
           <label class="chk"><input type="checkbox" id="played" ${S.played ? 'checked' : ''}><span><b>${t('incl.playedT')}</b><small>${t('incl.played')}</small></span></label>
+          <label class="chk"><input type="checkbox" id="kids" ${S.kids ? 'checked' : ''}><span><b>${t('incl.kidsT')}</b><small>${t('incl.kids')}</small></span></label>
         </div>
       </div>
     </section>
@@ -891,6 +910,7 @@ function factsHTML(r) {
   if (r.m && r.m.pos + r.m.neg >= 20) { const p = Math.round(r.m.pos / (r.m.pos + r.m.neg) * 100); f.push(`<span class="pill ${p >= 85 ? 'good' : ''}">${t('fact.reviews', { p })}</span>`); }
   if (isCoop(r.m)) f.push(`<span class="pill">${t('fact.coop')}</span>`);
   const dp = devicePill(r.m); if (dp) f.push(dp);
+  if (S.kids) f.push(`<span class="pill good">${r.m?.age != null ? t('fact.kidAge', { a: r.m.age }) : t('fact.kidFF')}</span>`);
   const l = liveOf(r.g.appid);
   if (l.players >= LIVE_MIN) f.push(`<span class="pill hot">${t('fact.players', { n: fmtN(l.players) })}</span>`);
   return `<div class="facts">${f.join('')}</div>`;
@@ -1136,6 +1156,7 @@ document.addEventListener('input', (e) => { if (e.target.id === 'tagq') { S.tagQ
 document.addEventListener('change', (e) => {
   if (e.target.id === 'started') { S.started = e.target.checked; saveUser(); renderResults(); }
   if (e.target.id === 'played') { S.played = e.target.checked; S.picks = []; saveUser(); renderResults(); }
+  if (e.target.id === 'kids') { S.kids = e.target.checked; S.picks = []; saveUser(); renderResults(); }
 });
 document.addEventListener('toggle', (e) => { if (e.target.id === 'pile' && e.target.open) renderPile(); }, true);
 

@@ -27,9 +27,10 @@ test/worker.test.js tests node:test du relais (npm test)
   - Renvoie `{steamid, persona, avatar, games:[{appid,name,playtime(min),lastPlayed}]}`.
   - Erreurs : 400 entrée non reconnue · 404 pseudo inconnu · 403 bibliothèque privée · 500 clé absente · 502 Steam indisponible.
 - `GET /api/meta?ids=1,2,…` (50 maximum)
-  - Renvoie `{meta:{appid:{tags[], median, average, pos, neg, ccu, ctrl, deck, v}|null}}`.
+  - Renvoie `{meta:{appid:{tags[], median, average, pos, neg, ccu, ctrl, deck, age, mature, v}|null}}`.
+  - `age` (`ageOf`) : âge minimum d'après les classifications de la fiche (`include_ratings`) : PEGI, sinon ESRB (EC/E 3, E10+ 10, T 13, M 17, AO 18), sinon USK, sinon `required_age` ; `null` si inconnu. `mature` : `content_descriptorids` contient 1, 2, 3 ou 4 (nudité, violence / gore, contenu sexuel).
   - `ctrl` : manette `'full'` (catégorie Steam 28), `'partial'` (18), `'none'` (Steam a répondu sans) ou `null` (inconnu ; repli sur les tags « Full controller support » / « Controller »). `deck` : `platforms.steam_deck_compat_category` (3 vérifié, 2 jouable, 1 non pris en charge, 0 inconnu) ou `null`. Demandés via `include_platforms` et `include_basic_info`.
-  - `v: 2` marque les fiches qui ont ces champs : la page redemande une fois les fiches plus anciennes de son cache.
+  - `v` (`META_V` côté page, actuellement 3) : version des fiches ; la page redemande une fois les fiches de son cache plus anciennes. Monter `v` dans le Worker **et** `META_V` dans la page quand on ajoute un champ.
   - Source principale : `IStoreBrowseService/GetItems` (tout le lot en **une** requête, `include_tag_count: 20`, `include_reviews`), noms des tags via `IStoreService/GetTagList` (cache 7 jours). Avis = `review_count` × `percent_positive`. `median`, `average` et `ccu` valent 0 pour ces jeux.
   - Secours SteamSpy `appdetails` pour les jeux absents de Steam : 3 au plus par appel (`SPY_FALLBACK`), espacés d'1 seconde. Là, `median`/`average` sont en minutes de temps joué par les possesseurs et `ccu` est le pic de joueurs simultanés de la veille.
   - Pourquoi : SteamSpy seul (1 requête/s) demandait ~25 min pour une bibliothèque de 1 500 jeux ; c'est maintenant une trentaine de requêtes.
@@ -54,6 +55,7 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - **Candidats** : jeux avec moins de 2 h de jeu, sauf ceux marqués fini, pas intéressé ou en cours, et sauf ceux masqués pour la session.
   - Les deux cases d'inclusion sont de grandes options sous « Quels jeux inclure ? » (`.incl`) : « à peine commencés » (`started`, moins de 2 h) et « auxquels tu joues déjà » (`played`). Elles valent aussi pour Ça bouge et le Versus, qui partent des mêmes candidats. Une autre édition d'un jeu joué (ex. Miles Morales à côté de Spider-Man) reste un jeu distinct pour Steam.
   - Case « Inclure les jeux auxquels tu joues déjà » (`played`, décochée par défaut) : ajoute les jeux à plus de 2 h et ceux marqués en cours. Pour eux, l'adéquation au créneau se calcule sur le temps restant (`median` − temps joué) ; durée inconnue (0.45) si ce temps est dépassé.
+- **🧒 Kid friendly** (`kids`, 3ᵉ option de « Quels jeux inclure ? », `kidOk`) : rien au-dessus de PEGI 10 (`KID_MAX_AGE`). Exclut `mature`, les tags adultes (`KID_BAD_TAGS` : Gore, Violent, Horror, Nudity…). Sans `age` connu, seulement les jeux tagués « Family Friendly ». Pastille « 🧒 N ans et + » / « 🧒 Family Friendly ». Vaut aussi pour Ça bouge et le Versus.
 - **Tu as envie de quoi ?** (`mood` : peu importe / 😌 chill / 🍿 casual / 💀 hardcore / 🏆 compétitif / 🔁 grind, `MOODS`, `moodFit`) : devinée depuis les tags Steam. Chaque envie a des tags `pos` (au moins un dans les 10 premiers tags du jeu, pondérés par leur rang) et `neg` (un seul dans les 6 premiers exclut le jeu ; ex. « Difficult » jamais en chill). Facteur de score `0.9 + 0.1·min(poids, 2)`. Jeu sans tags exclu quand une envie est choisie. Les tags qui collent sont affichés dans l'explication de la carte. Vaut aussi pour Ça bouge et le Versus.
 - **Comment tu joues ?** (`device` : peu importe / clavier-souris / manette / Steam Deck, `deviceFit`) :
   - clavier-souris : aucun filtre (tous les jeux PC) ;
@@ -95,8 +97,9 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 - **Lien partageable** : `?u=<profil>` charge directement un profil.
 
 ## État actuel
-- ✅ Code complet. Les tests du relais passent (`npm test`, 20 tests).
+- ✅ Code complet. Les tests du relais passent (`npm test`, 22 tests).
 - ✅ Déployé sur https://pile-of-shame.lucasbeauvais.com (aussi https://pile-of-shame.lucasbeauvais.workers.dev ; Cloudflare Workers Builds, déploiement à chaque push sur `main`). Testé en réel par Lucas : profil et recos OK.
+- 🆕 Âge (`ratings`, `content_descriptorids` de `GetItems`) : format écrit de mémoire, testé avec des données simulées. Si Steam ne renvoie pas les classifications, kid friendly ne garde que les jeux « Family Friendly ».
 - 🆕 Manette / Steam Deck (`categories`, `platforms` de `GetItems`) : noms de champs écrits de mémoire, testés avec des données simulées. Si Steam ne les renvoie pas, les jeux restent proposés avec « non précisé » / « non testé ».
 - 🆕 `/api/meta` via `IStoreBrowseService/GetItems` : forme de la réponse écrite de mémoire, vérifiée seulement avec des données simulées. Si Steam ne répond pas comme prévu, tout retombe sur SteamSpy (lent).
 - 🆕 Tendances (`/api/players`, `/api/charts`) : vérifiées seulement avec des données simulées, la forme réelle de `GetMostPlayedGames` reste à confirmer.
