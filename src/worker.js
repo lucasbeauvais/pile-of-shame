@@ -54,6 +54,7 @@ export function normalizeSpy(d) {
     pos: Number(d.positive) || 0,
     neg: Number(d.negative) || 0,
     ccu: Number(d.ccu) || 0,                 // pic de joueurs simultanés la veille, sert de point de comparaison
+    ctrl: null, deck: null, v: 2,            // SteamSpy ne dit rien de la manette ni du Steam Deck
   };
 }
 
@@ -154,18 +155,36 @@ async function tagNames(env, ctx) {
   });
 }
 
-// Réduit une fiche IStoreBrowseService/GetItems au même format que SteamSpy (tags triés, avis).
+const CAT_FULL_CONTROLLER = 28;    // catégorie Steam « Prise en charge complète des manettes »
+const CAT_PARTIAL_CONTROLLER = 18; // « Prise en charge partielle des manettes »
+
+// Manette : 'full', 'partial', 'none' (Steam a répondu sans manette) ou null (on ne sait pas).
+export function controllerOf(item, allTags) {
+  const cats = item.categories;
+  const ids = [...(cats?.controller_categoryids || []), ...(cats?.feature_categoryids || [])].map(Number);
+  if (ids.includes(CAT_FULL_CONTROLLER)) return 'full';
+  if (ids.includes(CAT_PARTIAL_CONTROLLER)) return 'partial';
+  // Repli sur les tags des joueurs quand Steam ne renvoie pas les catégories.
+  if (allTags.includes('Full controller support')) return 'full';
+  if (allTags.includes('Controller')) return 'partial';
+  return cats ? 'none' : null;
+}
+
+// Réduit une fiche IStoreBrowseService/GetItems au même format que SteamSpy (tags triés, avis),
+// plus la manette (ctrl) et la compatibilité Steam Deck (deck : 3 vérifié, 2 jouable, 1 non pris en charge, 0 inconnu).
 export function normalizeStoreItem(item, names) {
   if (!item || (item.success != null && item.success !== 1 && item.success !== true)) return null;
-  let tags = Array.isArray(item.tags)
+  const allTags = (Array.isArray(item.tags)
     ? [...item.tags].sort((a, b) => (b.weight || 0) - (a.weight || 0)).map((t) => names[t.tagid])
-    : (item.tagids || []).map((id) => names[id]);
-  tags = tags.filter(Boolean).slice(0, 15);
+    : (item.tagids || []).map((id) => names[id])).filter(Boolean);
+  const tags = allTags.slice(0, 15);
   const rv = item.reviews?.summary_filtered || item.reviews?.summary_unfiltered;
   const count = Number(rv?.review_count) || 0;
   const pos = Math.round(count * (Number(rv?.percent_positive) || 0) / 100);
   if (!tags.length && !count) return null;
-  return { tags, median: 0, average: 0, pos, neg: count - pos, ccu: 0 };
+  const deckRaw = item.platforms?.steam_deck_compat_category;
+  const deck = deckRaw == null ? null : Number(deckRaw);
+  return { tags, median: 0, average: 0, pos, neg: count - pos, ccu: 0, ctrl: controllerOf(item, allTags), deck: Number.isInteger(deck) ? deck : null, v: 2 };
 }
 
 // Genres et avis de tout un lot en une requête Steam.
@@ -175,7 +194,7 @@ async function storeItems(ids, env, ctx) {
   const input = {
     ids: ids.map((appid) => ({ appid })),
     context: { language: 'english', country_code: 'US', steam_realm: 1 },
-    data_request: { include_tag_count: 20, include_reviews: true },
+    data_request: { include_tag_count: 20, include_reviews: true, include_platforms: true, include_basic_info: true },
   };
   const d = await getJSON(`${STEAM}/IStoreBrowseService/GetItems/v1/?key=${env.STEAM_API_KEY}&input_json=${encodeURIComponent(JSON.stringify(input))}`);
   const out = {};

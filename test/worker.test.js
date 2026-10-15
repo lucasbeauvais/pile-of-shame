@@ -76,7 +76,7 @@ test('pseudo inconnu → 404', async () => {
 test('normalizeStoreItem : tags par poids, avis convertis', () => {
   const names = { 1: 'RPG', 2: 'Co-op', 3: 'Indie' };
   const m = normalizeStoreItem({ appid: 10, success: 1, tags: [{ tagid: 3, weight: 10 }, { tagid: 1, weight: 90 }, { tagid: 2, weight: 50 }, { tagid: 99, weight: 5 }], reviews: { summary_filtered: { review_count: 200, percent_positive: 90 } } }, names);
-  assert.deepEqual(m, { tags: ['RPG', 'Co-op', 'Indie'], median: 0, average: 0, pos: 180, neg: 20, ccu: 0 });
+  assert.deepEqual(m, { tags: ['RPG', 'Co-op', 'Indie'], median: 0, average: 0, pos: 180, neg: 20, ccu: 0, ctrl: null, deck: null, v: 2 });
   assert.deepEqual(normalizeStoreItem({ appid: 11, tagids: [2, 1] }, names).tags, ['Co-op', 'RPG']);
   assert.equal(normalizeStoreItem({ appid: 12, success: 2 }, names), null);
   assert.equal(normalizeStoreItem({ appid: 13 }, names), null);
@@ -201,4 +201,29 @@ test('site : redirige vers le site du jeu, sinon vers la page Steam', async () =
   ({ ctx } = setup([]));
   r = await worker.fetch(new Request('https://x.dev/api/site?appid=30'), env, ctx);
   assert.equal(r.headers.get('location'), 'https://store.steampowered.com/app/30');
+});
+
+test('normalizeStoreItem : manette et Steam Deck', () => {
+  const names = { 1: 'FPS', 2: 'Full controller support', 3: 'Controller' };
+  const base = { appid: 1, success: 1, reviews: { summary_filtered: { review_count: 10, percent_positive: 50 } } };
+  const full = normalizeStoreItem({ ...base, categories: { controller_categoryids: [28] }, platforms: { steam_deck_compat_category: 3 } }, names);
+  assert.equal(full.ctrl, 'full'); assert.equal(full.deck, 3);
+  assert.equal(normalizeStoreItem({ ...base, categories: { feature_categoryids: [2, 18] } }, names).ctrl, 'partial');
+  const none = normalizeStoreItem({ ...base, categories: { feature_categoryids: [1, 2] }, platforms: { steam_deck_compat_category: 1 } }, names);
+  assert.equal(none.ctrl, 'none'); assert.equal(none.deck, 1);
+  assert.equal(normalizeStoreItem({ ...base, tags: [{ tagid: 2, weight: 1 }] }, names).ctrl, 'full');
+  assert.equal(normalizeStoreItem({ ...base, tags: [{ tagid: 1, weight: 9 }, { tagid: 3, weight: 1 }] }, names).ctrl, 'partial');
+  assert.equal(normalizeStoreItem({ ...base, tags: [{ tagid: 1, weight: 9 }] }, names).ctrl, null);
+});
+
+test('meta : demande plateformes et infos de base à Steam', async () => {
+  const { calls, ctx } = setup([
+    ['GetTagList', { response: { tags: [{ tagid: 1, name: 'FPS' }] } }],
+    ['GetItems', { response: { store_items: [{ appid: 730, success: 1, tags: [{ tagid: 1, weight: 1 }], categories: { feature_categoryids: [1] }, platforms: { steam_deck_compat_category: 1 } }] } }],
+  ]);
+  const d = (await (await worker.fetch(new Request('https://x.dev/api/meta?ids=730'), env, ctx)).json()).meta;
+  assert.equal(d['730'].ctrl, 'none'); assert.equal(d['730'].deck, 1);
+  const input = JSON.parse(decodeURIComponent(calls.find((c) => c.includes('GetItems')).split('input_json=')[1]));
+  assert.equal(input.data_request.include_platforms, true);
+  assert.equal(input.data_request.include_basic_info, true);
 });
