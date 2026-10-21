@@ -120,7 +120,7 @@ Recommandés, pour les durées IGDB (sans eux, repli sur SteamSpy, qui n'a plus 
 ## SEO / GEO
 - URL canonique : **https://pile-of-shame.lucasbeauvais.com/** (canonical, `og:url`, JSON-LD). L'URL workers.dev reste joignable.
 - L'appli (`<main id="app">`) est rendue en JS : les crawlers ne la voient pas. Ce qui est lisible sans JS est donc écrit **en dur** dans `public/index.html` :
-  - footer : « Un projet perso de Lucas Beauvais Cochereau · LinkedIn » (https://fr.linkedin.com/in/lucas-beauvais) et la ligne des sources de données ;
+  - footer : « Side project de Lucas Beauvais · LinkedIn » (nom → https://lucasbeauvais.com/, LinkedIn → https://fr.linkedin.com/in/lucas-beauvais) et la ligne des sources de données ;
   - bloc `#about`, **tout en bas, après le footer**, volontairement discret (12 px, gris, sans cartes) : « C'est quoi, la pile de la honte ? », « Comment ça marche », « Qui est derrière ». Visible quand même, pour ne pas ressembler à du texte caché.
   - Ces blocs portent `data-i18n="clé"` : en français dans le HTML d'origine, `applyLang()` les traduit quand la page passe en anglais. Modifier le texte = modifier le HTML **et** les clés `fr` / `en`.
 - `<head>` : canonical, Open Graph (pas d'`og:image`, aucune image dans le projet), `meta author`, JSON-LD `@graph` = `WebApplication` (auteur → `#lucas`) + `Person` (`#lucas`, `sameAs` LinkedIn).
